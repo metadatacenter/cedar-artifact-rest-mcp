@@ -49,6 +49,12 @@ The LLM converts the template to JSON with `cedar-artifact-mcp`'s `template_to_j
 `validate_artifact` posts that to the server's authoritative validator and returns its report.
 Nothing is created — it is a dry run, usable on any artifact including ones pulled from elsewhere.
 
+That conversion is needed because the CEDAR server's REST API currently speaks **JSON only** —
+every call here (validate, create, update) takes a JSON body, and the LLM renders responses back to
+YAML for display with `template_to_yaml`. The server is expected to accept YAML directly in a later
+release, at which point the conversion hop disappears; JSON is the server's current wire format,
+not a privileged form of the artifact.
+
 *Save it to CEDAR.*
 
 ```yaml
@@ -76,14 +82,9 @@ that id. From then on the server `@id` is the handle — it is what you pass to 
 `delete`. Only the **top-level** `@id` is reassigned; the embedded field ids (`0252465c…`,
 `cbb34a8a…`) ride through unchanged.
 
-The CEDAR server's REST API currently speaks **JSON only**, so the LLM converts the template with
-`cedar-artifact-mcp`'s `template_to_json` before this call (and renders the response back with
-`template_to_yaml` for display). The server is expected to accept YAML directly in a later release,
-at which point that conversion hop disappears — JSON is the server's current wire format, not a
-privileged form of the artifact. Two more server behaviors to expect on store: it **requires** a
-`version` and `status` (both supplied automatically by `cedar-artifact-mcp` when it builds the
-artifact), and it **rewrites** the JSON-Schema `title` / `description` while leaving `schema:name`
-/ `schema:description` alone.
+Two server behaviors to expect on store: it **requires** a `version` and `status` (both supplied
+automatically by `cedar-artifact-mcp` when it builds the artifact), and it **rewrites** the
+JSON-Schema `title` / `description` while leaving `schema:name` / `schema:description` alone.
 
 *Fetch it back.*
 
