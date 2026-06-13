@@ -123,11 +123,6 @@ children:
     value: 30
 ```
 
-The CEDAR server requires an instance to carry **every** template field; a sparse instance is
-rejected. So the LLM first asks `cedar-artifact-mcp` to produce a complete JSON instance
-(`instance_to_json`, given the template), then persists it here with `create_instance` — which,
-like `create_template`, lets the server assign the instance's `@id`.
-
 *Delete the template.*
 
 `delete_template` is **destructive and irreversible**, so the LLM confirms with the user before
