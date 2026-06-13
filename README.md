@@ -1,7 +1,7 @@
 # cedar-rest-mcp
 
 An MCP server that manages CEDAR **artifacts** — templates, elements, fields, and instances —
-through the CEDAR **resource-server REST API**. It is the I/O counterpart to
+through the CEDAR [**resource-server REST API**](https://resource.metadatacenter.org/api/). It is the I/O counterpart to
 [`cedar-artifact-mcp`](../cedar-artifact-mcp): that one builds, converts, and validates artifacts
 in memory; this one persists them to, and fetches them from, a live CEDAR server.
 
