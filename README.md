@@ -230,9 +230,3 @@ CEDAR_API_KEY="apiKey <key>" CEDAR_BASE_URL="https://resource.metadatacenter.org
 
 Without `CEDAR_API_KEY` the live tests self-skip. Each test cleans up after itself (a failed
 cleanup fails the test).
-
-## Instances: complete them first
-
-The CEDAR server requires an instance to carry every template field. A *sparse* instance (what
-`cedar-artifact-mcp` produces by default) will be rejected. Complete it first — e.g.
-`cedar-artifact-mcp`'s `instance_to_json` given the template — then `create`/`update` it here.
