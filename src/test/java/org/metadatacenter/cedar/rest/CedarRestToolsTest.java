@@ -63,14 +63,19 @@ final class CedarRestToolsTest
         "the caller's @id must be overwritten with null; got: " + http.body);
   }
 
-  @Test void create_rejects_yaml_with_a_redirect_to_artifact_mcp()
+  @Test void create_accepts_yaml_and_posts_canonical_json()
   {
-    McpSchema.CallToolResult result = invoke(new FakeHttp(201, "{}"), "create_template",
+    FakeHttp http = new FakeHttp(201, "{}");
+    McpSchema.CallToolResult result = invoke(http, "create_template",
         Map.of("artifact", "type: template\nname: Demo\n"));
 
-    assertTrue(result.isError(), "YAML input must be rejected — this MCP is JSON only");
-    assertTrue(text(result).contains("JSON only") && text(result).contains("template_to_json"),
-        "error should redirect to cedar-artifact-mcp's converter; got: " + text(result));
+    assertFalse(result.isError(), "YAML input must be accepted and converted; got: " + text(result));
+    assertEquals("POST", http.method);
+    assertEquals("/templates", http.path);
+    assertTrue(http.body.contains(TEMPLATE_TYPE_IRI),
+        "YAML must be converted to canonical CEDAR JSON before sending; got: " + http.body);
+    assertTrue(http.body.contains("\"@id\":null"),
+        "create must still null the top-level @id; got: " + http.body);
   }
 
   @Test void get_url_encodes_the_iri_into_the_path()

@@ -3,27 +3,33 @@ package org.metadatacenter.cedar.rest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.metadatacenter.artifacts.model.reader.YamlArtifactReader;
+import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
+import org.yaml.snakeyaml.DumperOptions;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.nodes.Tag;
+import org.yaml.snakeyaml.representer.Representer;
+import org.yaml.snakeyaml.resolver.Resolver;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * JSON helpers for the REST tools. This MCP speaks the CEDAR server's own wire format — JSON —
- * end to end: artifacts go in as JSON and come back as JSON. It does no YAML conversion and
- * carries no dependency on {@code cedar-artifact-library}; converting between YAML (the ecosystem's
- * exchange currency) and JSON is {@code cedar-artifact-mcp}'s job — its {@code *_to_json} and
- * {@code *_to_yaml} tools exist for exactly this boundary. The orchestrating LLM converts a YAML
- * artifact to JSON with {@code *_to_json} before persisting it here, and renders a fetched JSON
- * artifact back to YAML with {@code *_to_yaml} for display.
- *
- * <p>So this class is just Jackson plumbing: parse, pretty/compact serialize, null the create-time
- * {@code @id}, and detect an artifact's kind from its {@code @type} (for {@code validate_artifact},
- * the one tool that isn't already per-kind).
+ * Artifact codec for the REST tools. The CEDAR server's wire format is JSON, so artifacts are sent
+ * and returned as JSON. Callers, however, may supply an artifact as either JSON or the compact
+ * YAML the rest of the ecosystem trades in (canonical CEDAR JSON is large enough that handing it
+ * to an LLM is impractical) — so this codec accepts both: YAML is read into the artifact model
+ * with {@code cedar-artifact-library} and rendered to canonical JSON before it goes to the server.
+ * Fetched artifacts are still returned as JSON; render them back to YAML for display with
+ * {@code cedar-artifact-mcp}'s {@code *_to_yaml}.
  */
 final class ArtifactCodec
 {
   static final String JSON_LD_ID = "@id";
 
-  // CEDAR JSON-LD type IRIs and keys used to identify an artifact's kind. Inlined rather than
-  // pulled from cedar-model-library so this MCP needs no CEDAR dependency; these are stable
-  // parts of the CEDAR model vocabulary.
+  // CEDAR JSON-LD type IRIs and keys used to identify an artifact's kind, for validate_artifact.
   private static final String TEMPLATE_TYPE_IRI = "https://schema.metadatacenter.org/core/Template";
   private static final String ELEMENT_TYPE_IRI = "https://schema.metadatacenter.org/core/TemplateElement";
   private static final String FIELD_TYPE_IRI = "https://schema.metadatacenter.org/core/TemplateField";
@@ -31,13 +37,37 @@ final class ArtifactCodec
   private static final String SCHEMA_IS_BASED_ON = "schema:isBasedOn";
 
   private static final ObjectMapper JACKSON = new ObjectMapper();
+  // Compact-mode reader: accepts the lean authoring YAML (an absent modelVersion defaults).
+  private static final YamlArtifactReader YAML_READER = new YamlArtifactReader(true);
+  private static final JsonArtifactRenderer JSON_RENDERER = new JsonArtifactRenderer();
 
   private ArtifactCodec() {}
 
   /**
+   * Parse an incoming artifact — JSON or YAML — into a canonical CEDAR JSON {@code ObjectNode}.
+   * JSON is parsed as-is; YAML is read into the artifact model and re-rendered to JSON, with the
+   * kind taken from the YAML {@code type:} discriminator (anything that isn't template / element /
+   * instance / element-instance is a field kind).
+   */
+  static ObjectNode toObjectNode(String text)
+  {
+    if (looksLikeJson(text))
+      return asObjectNode(text);
+
+    LinkedHashMap<String, Object> map = parseYamlMap(text);
+    String type = map.get("type") == null ? "" : String.valueOf(map.get("type"));
+    return switch (type) {
+      case "template" -> JSON_RENDERER.renderTemplateSchemaArtifact(YAML_READER.readTemplateSchemaArtifact(map));
+      case "element" -> JSON_RENDERER.renderElementSchemaArtifact(YAML_READER.readElementSchemaArtifact(map));
+      case "instance" -> JSON_RENDERER.renderTemplateInstanceArtifact(YAML_READER.readTemplateInstanceArtifact(map));
+      case "element-instance" -> JSON_RENDERER.renderElementInstanceArtifact(YAML_READER.readElementInstanceArtifact(map));
+      default -> JSON_RENDERER.renderFieldSchemaArtifact(YAML_READER.readFieldSchemaArtifact(map));
+    };
+  }
+
+  /**
    * Force the top-level {@code @id} to JSON {@code null} for a create: the server assigns the real
-   * identity and returns it. Overwrites whatever the caller's artifact carried (e.g. an @id minted
-   * by cedar-artifact-mcp).
+   * identity and returns it. Overwrites whatever the caller's artifact carried.
    */
   static void nullifyTopLevelId(ObjectNode node)
   {
@@ -48,13 +78,18 @@ final class ArtifactCodec
   record Detected(ArtifactType type, String json) {}
 
   /**
-   * Detect the artifact kind of a JSON body for {@code /command/validate}, sending it on as-is
-   * (validate the artifact exactly as received).
+   * Normalize an artifact (JSON or YAML) for {@code /command/validate}: JSON is validated exactly
+   * as received; YAML is converted to canonical JSON first. Either way the kind is detected from
+   * the resulting {@code @type}.
    */
-  static Detected forValidation(String json)
+  static Detected forValidation(String text)
   {
-    ObjectNode node = asObjectNode(json);
-    return new Detected(detectFromJson(node), json);
+    if (looksLikeJson(text)) {
+      ObjectNode node = asObjectNode(text);
+      return new Detected(detectFromJson(node), text);
+    }
+    ObjectNode node = toObjectNode(text);
+    return new Detected(detectFromJson(node), compactJson(node));
   }
 
   private static ArtifactType detectFromJson(ObjectNode node)
@@ -80,10 +115,7 @@ final class ArtifactCodec
     return null;
   }
 
-  /**
-   * Whether {@code text} is JSON (the only format this MCP accepts). Used to give a caller who
-   * passed YAML a pointed redirect to cedar-artifact-mcp rather than a cryptic parse failure.
-   */
+  /** Whether {@code text} is JSON (vs YAML); used to pick the parse path. */
   static boolean looksLikeJson(String text)
   {
     for (int i = 0; i < text.length(); i++) {
@@ -121,6 +153,45 @@ final class ArtifactCodec
       return JACKSON.writeValueAsString(node);
     } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
       throw new RuntimeException("JSON serialize failed: " + e.getMessage(), e);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // YAML parsing — a SnakeYAML loader that does NOT resolve date-like scalars to timestamps,
+  // so temporal field values stay strings (matching cedar-artifact-mcp's exchange parser).
+  // ---------------------------------------------------------------------
+
+  private static LinkedHashMap<String, Object> parseYamlMap(String yamlText)
+  {
+    Object parsed = newYaml().load(yamlText);
+    if (!(parsed instanceof Map<?, ?>))
+      throw new IllegalArgumentException("YAML must parse to a mapping at the top level (got "
+          + (parsed == null ? "null" : parsed.getClass().getSimpleName()) + ")");
+    LinkedHashMap<String, Object> map = new LinkedHashMap<>();
+    for (Map.Entry<?, ?> entry : ((Map<?, ?>) parsed).entrySet())
+      map.put(String.valueOf(entry.getKey()), entry.getValue());
+    return map;
+  }
+
+  private static Yaml newYaml()
+  {
+    LoaderOptions loaderOptions = new LoaderOptions();
+    DumperOptions dumperOptions = new DumperOptions();
+    return new Yaml(new SafeConstructor(loaderOptions), new Representer(dumperOptions),
+        dumperOptions, loaderOptions, new NoTimestampResolver());
+  }
+
+  private static final class NoTimestampResolver extends Resolver
+  {
+    @Override protected void addImplicitResolvers()
+    {
+      addImplicitResolver(Tag.BOOL, BOOL, "yYnNtTfFoO");
+      addImplicitResolver(Tag.INT, INT, "-+0123456789");
+      addImplicitResolver(Tag.FLOAT, FLOAT, "-+0123456789.");
+      addImplicitResolver(Tag.MERGE, MERGE, "<");
+      addImplicitResolver(Tag.NULL, NULL, "~nN\0");
+      addImplicitResolver(Tag.NULL, EMPTY, null);
+      // Tag.TIMESTAMP intentionally not registered — keep date-like scalars as strings.
     }
   }
 }
