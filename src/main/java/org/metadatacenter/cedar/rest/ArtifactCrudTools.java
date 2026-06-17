@@ -18,9 +18,10 @@ import java.util.function.BiFunction;
  * so the tools are generated rather than written out as 16 near-identical classes; the server
  * registers them in a loop.
  *
- * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. Artifact bodies may be supplied
- * as YAML (the compact exchange form) or JSON — YAML is converted to canonical CEDAR JSON via
- * {@code cedar-artifact-library} before it's sent. Responses come back as JSON; render a fetched
+ * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. Artifact bodies are supplied
+ * as YAML (the compact exchange form); JSON is also accepted on input. YAML is converted to CEDAR
+ * JSON via {@code cedar-artifact-library} before it's sent — the server's wire format is JSON.
+ * Responses are rendered back to YAML by default; render a fetched
  * artifact to YAML for display with {@code cedar-artifact-mcp}'s {@code *_to_yaml}. {@code create}
  * nulls the top-level {@code @id} so the server assigns one. Non-2xx responses surface the server's
  * status and body as an error result (errors are content).
@@ -60,7 +61,7 @@ final class ArtifactCrudTools
         .description(
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
                 + "artifact as YAML (the compact exchange form — an order of magnitude smaller than "
-                + "JSON and lossless), or as canonical CEDAR JSON if you pass format: json. "
+                + "JSON and lossless), or as JSON only if you pass format: json. "
                 + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize.")
         .inputSchema(schema(properties, List.of("id")))
         .build();
@@ -98,9 +99,9 @@ final class ArtifactCrudTools
             "Creates a new CEDAR " + type.noun + " on the CEDAR server (it is placed in your home "
                 + "folder). The artifact's top-level @id is set to null on submission; the server "
                 + "assigns the real @id and returns the created artifact as YAML (the compact "
-                + "exchange form), or as canonical CEDAR JSON if you pass format: json. WRITES to "
+                + "exchange form), or as JSON only if you pass format: json. WRITES to "
                 + "the server. Supply the artifact inline as YAML (the compact form "
-                + "cedar-artifact-mcp returns) or as JSON — either is accepted; pass it verbatim, "
+                + "cedar-artifact-mcp returns); JSON is also accepted. Pass it verbatim, "
                 + "don't reformat.")
         .inputSchema(schema(properties, List.of("artifact")))
         .build();
@@ -145,9 +146,9 @@ final class ArtifactCrudTools
         .description(
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
                 + "@id in the artifact body must match the id argument. Returns the updated artifact "
-                + "as YAML (the compact exchange form), or as canonical CEDAR JSON if you pass "
+                + "as YAML (the compact exchange form), or as JSON only if you pass "
                 + "format: json. WRITES to the server. Supply the artifact inline as YAML (the "
-                + "compact form cedar-artifact-mcp returns) or as JSON — either is accepted; pass it "
+                + "compact form cedar-artifact-mcp returns); JSON is also accepted. Pass it "
                 + "verbatim, don't reformat.")
         .inputSchema(schema(properties, List.of("id", "artifact")))
         .build();
@@ -265,7 +266,7 @@ final class ArtifactCrudTools
   {
     return Map.of("type", "string", "description",
         "The CEDAR " + type.noun + " as YAML (the compact exchange form cedar-artifact-mcp "
-            + "produces) or as JSON. Pass it inline, verbatim.");
+            + "produces); JSON is also accepted. Pass it inline, verbatim.");
   }
 
   private static Map<String, Object> formatProperty()
@@ -274,9 +275,9 @@ final class ArtifactCrudTools
         "type", "string",
         "enum", List.of("yaml", "json"),
         "description",
-        "Output format for the returned artifact: \"yaml\" (the default) is the compact exchange "
-            + "form — an order of magnitude smaller than JSON and lossless; \"json\" is canonical "
-            + "CEDAR JSON. Omit it for YAML.");
+        "Output format for the returned artifact. Leave it unset (or \"yaml\") to get the compact "
+            + "exchange form — an order of magnitude smaller than JSON and lossless. Pass \"json\" "
+            + "only when a downstream tool can't read YAML. YAML is the default.");
   }
 
   private static McpSchema.JsonSchema schema(Map<String, Object> properties, List<String> required)

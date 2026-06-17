@@ -21,10 +21,11 @@ import java.util.Map;
 
 /**
  * Artifact codec for the REST tools. The CEDAR server's wire format is JSON, so artifacts are sent
- * and returned as JSON. Callers, however, may supply an artifact as either JSON or the compact
- * YAML the rest of the ecosystem trades in (canonical CEDAR JSON is large enough that handing it
- * to an LLM is impractical) — so this codec accepts both: YAML is read into the artifact model
- * with {@code cedar-artifact-library} and rendered to canonical JSON before it goes to the server.
+ * and returned as JSON. Callers, however, supply an artifact as the compact
+ * YAML the rest of the ecosystem trades in (CEDAR JSON is large enough that handing it
+ * to an LLM is impractical), with JSON also accepted — so this codec accepts both: YAML is read
+ * into the artifact model with {@code cedar-artifact-library} and rendered to JSON before it goes
+ * to the server.
  * On the way back, a fetched artifact is rendered to YAML by default (see {@link #toYaml}) — the
  * compact exchange form — and only returned as JSON when the caller explicitly asks for it.
  */
@@ -43,13 +44,13 @@ final class ArtifactCodec
   // Compact-mode reader: accepts the lean authoring YAML (an absent modelVersion defaults).
   private static final YamlArtifactReader YAML_READER = new YamlArtifactReader(true);
   private static final JsonArtifactRenderer JSON_RENDERER = new JsonArtifactRenderer();
-  // Reads canonical CEDAR JSON (what the server serves) into the artifact model for YAML rendering.
+  // Reads CEDAR JSON (what the server serves) into the artifact model for YAML rendering.
   private static final JsonArtifactReader JSON_READER = new JsonArtifactReader();
 
   private ArtifactCodec() {}
 
   /**
-   * Render a fetched artifact — canonical CEDAR JSON straight from the server — as YAML. The kind
+   * Render a fetched artifact — CEDAR JSON straight from the server — as YAML. The kind
    * is supplied by the caller (each REST tool knows its own {@link ArtifactType}), so no
    * {@code @type} sniffing is needed. The YAML is the expanded, lossless exchange form: an order of
    * magnitude smaller than the JSON yet carrying every field (including provenance, version, and
@@ -67,7 +68,7 @@ final class ArtifactCodec
   }
 
   /**
-   * Parse an incoming artifact — JSON or YAML — into a canonical CEDAR JSON {@code ObjectNode}.
+   * Parse an incoming artifact — YAML or JSON — into a CEDAR JSON {@code ObjectNode}.
    * JSON is parsed as-is; YAML is read into the artifact model and re-rendered to JSON, with the
    * kind taken from the YAML {@code type:} discriminator (anything that isn't template / element /
    * instance / element-instance is a field kind).
@@ -101,8 +102,8 @@ final class ArtifactCodec
   record Detected(ArtifactType type, String json) {}
 
   /**
-   * Normalize an artifact (JSON or YAML) for {@code /command/validate}: JSON is validated exactly
-   * as received; YAML is converted to canonical JSON first. Either way the kind is detected from
+   * Normalize an artifact (YAML or JSON) for {@code /command/validate}: YAML is converted to JSON
+   * first; JSON is validated exactly as received. Either way the kind is detected from
    * the resulting {@code @type}.
    */
   static Detected forValidation(String text)

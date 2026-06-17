@@ -10,8 +10,9 @@ import java.util.function.BiFunction;
 
 /**
  * Tool {@code validate_artifact} — validates a CEDAR artifact against the meta-model using the
- * server's authoritative {@code POST /command/validate}. Accepts the artifact as YAML or JSON
- * (YAML is converted to canonical JSON first); the kind (template / element / field / instance) is
+ * server's authoritative {@code POST /command/validate}. Accepts the artifact as YAML (JSON is also
+ * accepted); YAML is converted to JSON first, since the server's wire format is JSON. The kind
+ * (template / element / field / instance) is
  * auto-detected from the {@code @type}. Returns the server's {@code {validates, warnings, errors}}
  * report.
  */
@@ -24,15 +25,16 @@ final class ValidateArtifactTool
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("artifact", Map.of("type", "string", "description",
         "A CEDAR template, element, field, or instance as YAML (the compact exchange form "
-            + "cedar-artifact-mcp produces) or as JSON. Pass it inline, verbatim — don't reformat "
-            + "it."));
+            + "cedar-artifact-mcp produces); JSON is also accepted. Pass it inline, verbatim — "
+            + "don't reformat it."));
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
         .name("validate_artifact")
         .title("Validate a CEDAR artifact on the server")
         .description(
             "Validates a CEDAR artifact against the CEDAR meta-model using the server's "
-                + "/command/validate (authoritative). Accepts the artifact as YAML or JSON; the "
+                + "/command/validate (authoritative). Supply the artifact as YAML (JSON is also "
+                + "accepted); the "
                 + "kind is auto-detected from its @type. Returns the server's report: "
                 + "{\"validates\": true|false, \"warnings\": [...], \"errors\": [...]}. This is a "
                 + "read-only call (no artifact is created).")
