@@ -52,15 +52,16 @@ final class ArtifactCrudTools
   {
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("id", idProperty(type));
+    properties.put("format", formatProperty());
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
         .name("get_" + type.noun)
         .title("Fetch a CEDAR " + type.noun + " from the server")
         .description(
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
-                + "artifact as CEDAR JSON. To view it as compact YAML, pass the result to "
-                + "cedar-artifact-mcp's " + type.noun + "_to_yaml. Reproduce the returned JSON "
-                + "verbatim — do not drop @id lines or summarize.")
+                + "artifact as YAML (the compact exchange form — an order of magnitude smaller than "
+                + "JSON and lossless), or as canonical CEDAR JSON if you pass format: json. "
+                + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize.")
         .inputSchema(schema(properties, List.of("id")))
         .build();
 
@@ -76,7 +77,7 @@ final class ArtifactCrudTools
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(response);
+          return artifactResult(type, response, !wantsJson(args));
         };
 
     return new RegisteredTool(tool, handler);
@@ -88,6 +89,7 @@ final class ArtifactCrudTools
   {
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("artifact", artifactProperty(type));
+    properties.put("format", formatProperty());
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
         .name("create_" + type.noun)
@@ -95,9 +97,11 @@ final class ArtifactCrudTools
         .description(
             "Creates a new CEDAR " + type.noun + " on the CEDAR server (it is placed in your home "
                 + "folder). The artifact's top-level @id is set to null on submission; the server "
-                + "assigns the real @id and returns the created artifact as JSON. WRITES to the "
-                + "server. Supply the artifact inline as YAML (the compact form cedar-artifact-mcp "
-                + "returns) or as JSON — either is accepted; pass it verbatim, don't reformat.")
+                + "assigns the real @id and returns the created artifact as YAML (the compact "
+                + "exchange form), or as canonical CEDAR JSON if you pass format: json. WRITES to "
+                + "the server. Supply the artifact inline as YAML (the compact form "
+                + "cedar-artifact-mcp returns) or as JSON — either is accepted; pass it verbatim, "
+                + "don't reformat.")
         .inputSchema(schema(properties, List.of("artifact")))
         .build();
 
@@ -120,7 +124,7 @@ final class ArtifactCrudTools
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(response);
+          return artifactResult(type, response, !wantsJson(args));
         };
 
     return new RegisteredTool(tool, handler);
@@ -133,6 +137,7 @@ final class ArtifactCrudTools
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("id", idProperty(type));
     properties.put("artifact", artifactProperty(type));
+    properties.put("format", formatProperty());
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
         .name("update_" + type.noun)
@@ -140,8 +145,9 @@ final class ArtifactCrudTools
         .description(
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
                 + "@id in the artifact body must match the id argument. Returns the updated artifact "
-                + "as JSON. WRITES to the server. Supply the artifact inline as YAML (the compact "
-                + "form cedar-artifact-mcp returns) or as JSON — either is accepted; pass it "
+                + "as YAML (the compact exchange form), or as canonical CEDAR JSON if you pass "
+                + "format: json. WRITES to the server. Supply the artifact inline as YAML (the "
+                + "compact form cedar-artifact-mcp returns) or as JSON — either is accepted; pass it "
                 + "verbatim, don't reformat.")
         .inputSchema(schema(properties, List.of("id", "artifact")))
         .build();
@@ -167,7 +173,7 @@ final class ArtifactCrudTools
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(response);
+          return artifactResult(type, response, !wantsJson(args));
         };
 
     return new RegisteredTool(tool, handler);
@@ -212,18 +218,39 @@ final class ArtifactCrudTools
 
   // ---------------------------------------------------------------- helpers
 
-  /** Return the server's artifact JSON pretty-printed, or surface a non-2xx as an error result. */
-  private static McpSchema.CallToolResult artifactResult(CedarHttp.CedarResponse response)
+  /**
+   * Return the server's artifact, rendered as YAML (the compact exchange form) by default or as
+   * pretty JSON when {@code asYaml} is false; a non-2xx is surfaced as an error result.
+   */
+  private static McpSchema.CallToolResult artifactResult(
+      ArtifactType type, CedarHttp.CedarResponse response, boolean asYaml)
   {
     if (!response.isSuccess())
       return error("CEDAR returned HTTP " + response.status() + ": " + response.body());
+    ObjectNode node;
     try {
-      return success(ArtifactCodec.prettyJson(ArtifactCodec.asObjectNode(response.body())));
+      node = ArtifactCodec.asObjectNode(response.body());
     } catch (RuntimeException e) {
       // 2xx but a body we can't parse as a JSON object — hand back the raw bytes so the caller
       // still sees what came over the wire.
       return success(response.body());
     }
+    if (asYaml) {
+      try {
+        return success(ArtifactCodec.toYaml(type, node));
+      } catch (RuntimeException e) {
+        // The body parsed as JSON but the model reader / YAML renderer balked (an unusual or
+        // partial artifact). Fall back to JSON so the fetch still returns something usable.
+        return success(ArtifactCodec.prettyJson(node));
+      }
+    }
+    return success(ArtifactCodec.prettyJson(node));
+  }
+
+  /** True only when the caller explicitly asked for JSON; absent or anything else means YAML. */
+  private static boolean wantsJson(Map<String, Object> args)
+  {
+    return "json".equalsIgnoreCase(str(args, "format"));
   }
 
   private static Map<String, Object> idProperty(ArtifactType type)
@@ -239,6 +266,17 @@ final class ArtifactCrudTools
     return Map.of("type", "string", "description",
         "The CEDAR " + type.noun + " as YAML (the compact exchange form cedar-artifact-mcp "
             + "produces) or as JSON. Pass it inline, verbatim.");
+  }
+
+  private static Map<String, Object> formatProperty()
+  {
+    return Map.of(
+        "type", "string",
+        "enum", List.of("yaml", "json"),
+        "description",
+        "Output format for the returned artifact: \"yaml\" (the default) is the compact exchange "
+            + "form — an order of magnitude smaller than JSON and lossless; \"json\" is canonical "
+            + "CEDAR JSON. Omit it for YAML.");
   }
 
   private static McpSchema.JsonSchema schema(Map<String, Object> properties, List<String> required)

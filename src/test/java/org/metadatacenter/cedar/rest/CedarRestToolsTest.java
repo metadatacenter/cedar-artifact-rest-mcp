@@ -108,16 +108,32 @@ final class CedarRestToolsTest
         "error should carry status and server body; got: " + text(result));
   }
 
-  @Test void get_returns_the_server_json_pretty_printed()
+  @Test void get_returns_yaml_by_default()
+  {
+    // A full canonical template the model reader can re-read: round-trip a compact-YAML template
+    // through the codec to canonical JSON, hand that back as the server body, and expect YAML out.
+    String canonicalJson = ArtifactCodec.toObjectNode("type: template\nname: Demo\n").toString();
+
+    McpSchema.CallToolResult result = invoke(new FakeHttp(200, canonicalJson),
+        "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/demo"));
+
+    assertFalse(result.isError(), text(result));
+    assertTrue(text(result).contains("type: template") && text(result).contains("name: Demo"),
+        "default output should be YAML; got:\n" + text(result));
+    assertFalse(text(result).contains("\"@type\""), "default must not be JSON; got:\n" + text(result));
+  }
+
+  @Test void get_returns_pretty_json_when_format_is_json()
   {
     String templateJson = "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\","
         + "\"@id\":\"https://repo.metadatacenter.org/templates/demo\",\"schema:name\":\"Demo\"}";
 
     McpSchema.CallToolResult result = invoke(new FakeHttp(200, templateJson),
-        "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/demo"));
+        "get_template",
+        Map.of("id", "https://repo.metadatacenter.org/templates/demo", "format", "json"));
 
     assertFalse(result.isError(), text(result));
-    // Returned as JSON (not YAML): the @id and name survive, and it pretty-prints over lines.
+    // format: json — the @id and name survive and it pretty-prints over lines.
     assertTrue(text(result).contains("\"@id\" : \"https://repo.metadatacenter.org/templates/demo\""),
         "response should be pretty-printed JSON; got:\n" + text(result));
     assertTrue(text(result).contains("\"schema:name\" : \"Demo\""), text(result));

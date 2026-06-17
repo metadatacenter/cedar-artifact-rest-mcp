@@ -3,8 +3,11 @@ package org.metadatacenter.cedar.rest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.metadatacenter.artifacts.model.core.Artifact;
+import org.metadatacenter.artifacts.model.reader.JsonArtifactReader;
 import org.metadatacenter.artifacts.model.reader.YamlArtifactReader;
 import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
+import org.metadatacenter.artifacts.model.tools.YamlSerializer;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -22,8 +25,8 @@ import java.util.Map;
  * YAML the rest of the ecosystem trades in (canonical CEDAR JSON is large enough that handing it
  * to an LLM is impractical) — so this codec accepts both: YAML is read into the artifact model
  * with {@code cedar-artifact-library} and rendered to canonical JSON before it goes to the server.
- * Fetched artifacts are still returned as JSON; render them back to YAML for display with
- * {@code cedar-artifact-mcp}'s {@code *_to_yaml}.
+ * On the way back, a fetched artifact is rendered to YAML by default (see {@link #toYaml}) — the
+ * compact exchange form — and only returned as JSON when the caller explicitly asks for it.
  */
 final class ArtifactCodec
 {
@@ -40,8 +43,28 @@ final class ArtifactCodec
   // Compact-mode reader: accepts the lean authoring YAML (an absent modelVersion defaults).
   private static final YamlArtifactReader YAML_READER = new YamlArtifactReader(true);
   private static final JsonArtifactRenderer JSON_RENDERER = new JsonArtifactRenderer();
+  // Reads canonical CEDAR JSON (what the server serves) into the artifact model for YAML rendering.
+  private static final JsonArtifactReader JSON_READER = new JsonArtifactReader();
 
   private ArtifactCodec() {}
+
+  /**
+   * Render a fetched artifact — canonical CEDAR JSON straight from the server — as YAML. The kind
+   * is supplied by the caller (each REST tool knows its own {@link ArtifactType}), so no
+   * {@code @type} sniffing is needed. The YAML is the expanded, lossless exchange form: an order of
+   * magnitude smaller than the JSON yet carrying every field (including provenance, version, and
+   * status), so it round-trips back through {@code update_*} without losing anything.
+   */
+  static String toYaml(ArtifactType type, ObjectNode node)
+  {
+    Artifact artifact = switch (type) {
+      case TEMPLATE -> JSON_READER.readTemplateSchemaArtifact(node);
+      case ELEMENT -> JSON_READER.readElementSchemaArtifact(node);
+      case FIELD -> JSON_READER.readFieldSchemaArtifact(node);
+      case INSTANCE -> JSON_READER.readTemplateInstanceArtifact(node);
+    };
+    return YamlSerializer.getYAML(artifact, false, false);
+  }
 
   /**
    * Parse an incoming artifact — JSON or YAML — into a canonical CEDAR JSON {@code ObjectNode}.
