@@ -144,6 +144,24 @@
                 <transformer
                   implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
               </transformers>
+              <!-- The cedar-model-* libraries are fat jars that embed jackson-annotations 2.17.2,
+                   whose JsonFormat.Shape predates the POJO constant Jackson 3 databind needs. Strip
+                   those stowaway classes so only the pinned 3.x jackson-annotations survives the merge;
+                   otherwise the old copy wins the shade and every MCP message fails to deserialize. -->
+              <filters>
+                <filter>
+                  <artifact>org.metadatacenter:cedar-model-library</artifact>
+                  <excludes>
+                    <exclude>com/fasterxml/jackson/annotation/**</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>org.metadatacenter:cedar-model-validation-library</artifact>
+                  <excludes>
+                    <exclude>com/fasterxml/jackson/annotation/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>all</shadedClassifierName>
