@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.metadatacenter.artifacts.model.core.Artifact;
+import org.metadatacenter.artifacts.model.core.TemplateInstanceArtifact;
+import org.metadatacenter.artifacts.model.core.TemplateSchemaArtifact;
 import org.metadatacenter.artifacts.model.reader.JsonArtifactReader;
 import org.metadatacenter.artifacts.model.reader.YamlArtifactReader;
 import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
+import org.metadatacenter.artifacts.model.tools.InstanceInflater;
 import org.metadatacenter.artifacts.model.tools.YamlSerializer;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -65,6 +68,26 @@ final class ArtifactCodec
       case INSTANCE -> JSON_READER.readTemplateInstanceArtifact(node);
     };
     return YamlSerializer.getYAML(artifact, false, false);
+  }
+
+  /** The template IRI an instance is based on ({@code schema:isBasedOn}), or null if absent. */
+  static String isBasedOn(ObjectNode instanceJson)
+  {
+    JsonNode node = instanceJson.path(SCHEMA_IS_BASED_ON);
+    return node.isTextual() ? node.asText() : null;
+  }
+
+  /**
+   * Inflate a (possibly sparse) instance against its template, returning the complete instance
+   * JSON. A YAML-sourced instance omits empty fields, but the server's validator requires every
+   * template property present; inflation materializes the missing empty slots. Pure — the caller
+   * supplies the template JSON (the REST tools fetch it from the server).
+   */
+  static ObjectNode inflateInstance(ObjectNode templateJson, ObjectNode instanceJson)
+  {
+    TemplateSchemaArtifact template = JSON_READER.readTemplateSchemaArtifact(templateJson);
+    TemplateInstanceArtifact instance = JSON_READER.readTemplateInstanceArtifact(instanceJson);
+    return JSON_RENDERER.renderTemplateInstanceArtifact(InstanceInflater.inflate(template, instance));
   }
 
   /**

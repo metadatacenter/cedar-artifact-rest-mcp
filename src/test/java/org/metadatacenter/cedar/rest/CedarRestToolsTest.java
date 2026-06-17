@@ -2,7 +2,11 @@ package org.metadatacenter.cedar.rest;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
+import org.metadatacenter.artifacts.model.core.TemplateSchemaArtifact;
+import org.metadatacenter.artifacts.model.core.TextField;
+import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +39,39 @@ final class CedarRestToolsTest
       this.path = pathAndQuery;
       this.body = jsonBody;
       return new CedarResponse(status, responseBody);
+    }
+  }
+
+  /**
+   * Answers a template on the {@code GET /templates/...} (the schema:isBasedOn lookup) and a
+   * separate canned response on the write; records the write method/path/body. A null
+   * {@code templateJson} makes the template fetch 404, exercising the unreachable-template path.
+   */
+  static final class RoutingHttp implements CedarHttp
+  {
+    private final String templateJson;
+    private final int writeStatus;
+    private final String writeBody;
+    String writeMethod, writePath, sentBody;
+    boolean templateFetched;
+
+    RoutingHttp(String templateJson, int writeStatus, String writeBody)
+    {
+      this.templateJson = templateJson;
+      this.writeStatus = writeStatus;
+      this.writeBody = writeBody;
+    }
+
+    @Override public CedarResponse request(String method, String pathAndQuery, String jsonBody)
+    {
+      if (method.equals("GET") && pathAndQuery.startsWith("/templates/")) {
+        templateFetched = true;
+        return templateJson == null ? new CedarResponse(404, "{}") : new CedarResponse(200, templateJson);
+      }
+      writeMethod = method;
+      writePath = pathAndQuery;
+      sentBody = jsonBody;
+      return new CedarResponse(writeStatus, writeBody);
     }
   }
 
@@ -160,7 +197,50 @@ final class CedarRestToolsTest
     assertTrue(text(result).contains("artifact"));
   }
 
+  @Test void create_instance_inflates_sparse_yaml_against_its_template()
+  {
+    RoutingHttp http = new RoutingHttp(studyTemplateJson(), 201, "{}");
+
+    McpSchema.CallToolResult result = invoke(http, "create_instance",
+        Map.of("artifact", SPARSE_INSTANCE_YAML));
+
+    assertFalse(result.isError(), text(result));
+    assertTrue(http.templateFetched, "the template should be fetched (via schema:isBasedOn) to inflate");
+    assertEquals("POST", http.writeMethod);
+    // The 'Notes' field the sparse instance omitted is materialized before the body is sent.
+    assertTrue(http.sentBody.contains("Notes"),
+        "the omitted field must be materialized before upload; sent: " + http.sentBody);
+    assertTrue(http.sentBody.contains("\"@id\":null"), "create must still null the top-level @id");
+  }
+
+  @Test void create_instance_uploads_as_is_with_a_note_when_template_unreachable()
+  {
+    // Template GET 404s, so inflation is skipped; the server then rejects the sparse instance.
+    RoutingHttp http = new RoutingHttp(null, 400, "{\"errorKey\":\"incomplete\"}");
+
+    McpSchema.CallToolResult result = invoke(http, "create_instance",
+        Map.of("artifact", SPARSE_INSTANCE_YAML));
+
+    assertTrue(result.isError());
+    assertTrue(text(result).contains("could not fetch the template"),
+        "a degraded upload should explain the skipped inflation; got: " + text(result));
+  }
+
   // helpers
+
+  private static final String SPARSE_INSTANCE_YAML =
+      "type: instance\nname: Study Instance\n"
+          + "isBasedOn: https://repo.metadatacenter.org/templates/T1\n";
+
+  /** A canonical one-field template, rendered to JSON the way the server would serve it. */
+  private static String studyTemplateJson()
+  {
+    TextField notes = TextField.builder().withName("Notes").build();
+    TemplateSchemaArtifact template = TemplateSchemaArtifact.builder().withName("Study")
+        .withJsonLdId(URI.create("https://repo.metadatacenter.org/templates/T1"))
+        .withFieldSchema(notes).build();
+    return new JsonArtifactRenderer().renderTemplateSchemaArtifact(template).toString();
+  }
 
   private static McpSchema.CallToolResult invoke(CedarHttp http, String toolName, Map<String, Object> args)
   {
