@@ -87,6 +87,25 @@
   </dependencies>
 
   <build>
+    <resources>
+      <!-- Filter only the .version stamp so ${project.version} is interpolated into it at build
+           time; copy every other resource verbatim, since filtering would corrupt templated
+           markup that uses ${...}. -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>**/*.version</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>**/*.version</exclude>
+        </excludes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

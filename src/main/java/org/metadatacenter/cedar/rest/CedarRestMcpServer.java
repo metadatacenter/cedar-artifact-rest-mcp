@@ -25,9 +25,31 @@ import java.util.Map;
 public final class CedarRestMcpServer
 {
   private static final String SERVER_NAME = "cedar-artifact-rest-mcp";
-  private static final String SERVER_VERSION = "0.1.0";
+  private static final String SERVER_VERSION = loadVersion();
 
   private CedarRestMcpServer() {}
+
+  /**
+   * Reads the build-stamped version from the filtered {@code <name>.version} resource. Falls back
+   * to "unknown" when the resource is missing or was copied without filtering (e.g. an IDE run
+   * that skips Maven resource filtering), so the server still starts.
+   */
+  private static String loadVersion()
+  {
+    try (java.io.InputStream in =
+             CedarRestMcpServer.class.getResourceAsStream("/" + SERVER_NAME + ".version")) {
+      if (in != null) {
+        java.util.Properties props = new java.util.Properties();
+        props.load(in);
+        String version = props.getProperty("version");
+        if (version != null && !version.isBlank() && !version.startsWith("${"))
+          return version;
+      }
+    } catch (java.io.IOException ignored) {
+      // fall through to the sentinel below
+    }
+    return "unknown";
+  }
 
   public static void main(String[] args) throws InterruptedException
   {
@@ -66,7 +88,8 @@ public final class CedarRestMcpServer
     return McpSchema.Tool.builder()
         .name("ping")
         .title("ping")
-        .description("Echoes the supplied message. Verifies the MCP server is reachable. Does not "
+        .description("Echoes the supplied message, with the server name and version appended. "
+            + "Verifies the MCP server is reachable and reports which build is running. Does not "
             + "contact the CEDAR server.")
         .inputSchema(schema)
         .build();
@@ -79,7 +102,8 @@ public final class CedarRestMcpServer
     String message = raw == null ? "" : raw.toString();
 
     return McpSchema.CallToolResult.builder()
-        .content(List.of(new McpSchema.TextContent(null, "pong: " + message)))
+        .content(List.of(new McpSchema.TextContent(null,
+            "pong: " + message + " (" + SERVER_NAME + " " + SERVER_VERSION + ")")))
         .isError(false)
         .build();
   }
