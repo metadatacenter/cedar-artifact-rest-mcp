@@ -18,18 +18,19 @@ honest conduit to it. Artifact *construction* and in-memory validation/conversio
 
 ## Principle 3 — JSON on the wire, JSON at the boundary
 
-The REST API speaks JSON, and so does this MCP — artifacts go in as JSON and come back as JSON,
-end to end. It does **not** convert to or from YAML, and carries no dependency on
-`cedar-artifact-library`. JSON here is the CEDAR server's wire format, not a privileged
+This MCP goes through JSON on the wire — artifacts are sent as JSON and the JSON the server serves
+is read back, end to end. (The CEDAR server now accepts and returns both YAML and JSON; this MCP
+still travels over JSON.) It does **not** convert to or from YAML, and carries no dependency on
+`cedar-artifact-library`. JSON here is just one serialization, not a privileged
 representation: the artifact *model* is what's canonical, and JSON and YAML are equal
-serializations of it (cedar-artifact-mcp Principle 8) — JSON is merely the de-facto serialization
-today because the server, validator, and meta-schema all speak it. CEDAR artifacts also travel as
-compact YAML (the human-friendly serialization), but converting between that and the server's JSON
+serializations of it (cedar-artifact-mcp Principle 8) — JSON is the serialization this conduit
+happens to use on the wire, and the server, validator, and meta-schema all speak it. CEDAR artifacts also travel as
+compact YAML (the human-friendly serialization), and converting between that and the server's JSON
 is `cedar-artifact-mcp`'s job: its `*_to_json` and
 `*_to_yaml` tools exist for exactly this boundary, and the orchestrating LLM runs them on either
 side of a REST call. Conversion lived here once (reusing the library); folding it back into the
-single MCP that already owns it removed a duplicated copy of the readers/renderers, let this MCP
-resolve entirely from Maven Central, and matched the REST API's own JSON-only contract. A caller
+single MCP that already owns it removed a duplicated copy of the readers/renderers and let this MCP
+resolve entirely from Maven Central. A caller
 that passes YAML is redirected to `cedar-artifact-mcp`'s `*_to_json` rather than silently parsed.
 
 ## Principle 4 — `@id` on create vs update

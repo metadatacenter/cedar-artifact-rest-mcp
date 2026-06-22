@@ -110,7 +110,7 @@ final class CedarRestToolsTest
     assertEquals("POST", http.method);
     assertEquals("/templates", http.path);
     assertTrue(http.body.contains(TEMPLATE_TYPE_IRI),
-        "YAML must be converted to canonical CEDAR JSON before sending; got: " + http.body);
+        "YAML must be converted to CEDAR JSON before sending; got: " + http.body);
     assertTrue(http.body.contains("\"@id\":null"),
         "create must still null the top-level @id; got: " + http.body);
   }
@@ -147,11 +147,11 @@ final class CedarRestToolsTest
 
   @Test void get_returns_yaml_by_default()
   {
-    // A full canonical template the model reader can re-read: round-trip a compact-YAML template
-    // through the codec to canonical JSON, hand that back as the server body, and expect YAML out.
-    String canonicalJson = ArtifactCodec.toObjectNode("type: template\nname: Demo\n").toString();
+    // A full template the model reader can re-read: round-trip a compact-YAML template through
+    // the codec to JSON, hand that back as the server body, and expect YAML out.
+    String templateJson = ArtifactCodec.toObjectNode("type: template\nname: Demo\n").toString();
 
-    McpSchema.CallToolResult result = invoke(new FakeHttp(200, canonicalJson),
+    McpSchema.CallToolResult result = invoke(new FakeHttp(200, templateJson),
         "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/demo"));
 
     assertFalse(result.isError(), text(result));

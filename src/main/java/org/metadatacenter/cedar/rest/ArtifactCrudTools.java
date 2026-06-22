@@ -19,8 +19,8 @@ import java.util.function.BiFunction;
  * registers them in a loop.
  *
  * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. Artifact bodies are supplied
- * as YAML (the compact exchange form); JSON is also accepted on input. YAML is converted to CEDAR
- * JSON via {@code cedar-artifact-library} before it's sent — the server's wire format is JSON.
+ * as YAML (the compact exchange form); JSON is also accepted on input. YAML is converted to
+ * JSON via {@code cedar-artifact-library} before it's sent (the server now accepts YAML too).
  * Responses are rendered back to YAML by default; render a fetched
  * artifact to YAML for display with {@code cedar-artifact-mcp}'s {@code *_to_yaml}. {@code create}
  * nulls the top-level {@code @id} so the server assigns one. Non-2xx responses surface the server's

@@ -11,7 +11,7 @@ import java.util.function.BiFunction;
 /**
  * Tool {@code validate_artifact} — validates a CEDAR artifact against the meta-model using the
  * server's authoritative {@code POST /command/validate}. Accepts the artifact as YAML (JSON is also
- * accepted); YAML is converted to JSON first, since the server's wire format is JSON. The kind
+ * accepted); this codec converts YAML to JSON before sending (the server also accepts YAML). The kind
  * (template / element / field / instance) is
  * auto-detected from the {@code @type}. Returns the server's {@code {validates, warnings, errors}}
  * report.

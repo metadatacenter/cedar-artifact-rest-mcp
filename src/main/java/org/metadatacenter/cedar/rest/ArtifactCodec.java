@@ -23,11 +23,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Artifact codec for the REST tools. The CEDAR server's wire format is JSON, so artifacts are sent
- * and returned as JSON. Callers, however, supply an artifact as the compact
+ * Artifact codec for the REST tools. The CEDAR server now accepts and returns both YAML and JSON;
+ * this codec still goes through JSON on the wire — sending JSON and reading the JSON the server
+ * serves. Callers supply an artifact as the compact
  * YAML the rest of the ecosystem trades in (CEDAR JSON is large enough that handing it
  * to an LLM is impractical), with JSON also accepted — so this codec accepts both: YAML is read
- * into the artifact model with {@code cedar-artifact-library} and rendered to JSON before it goes
+ * into the artifact model with {@code cedar-artifact-library} and converted to JSON before it goes
  * to the server.
  * On the way back, a fetched artifact is rendered to YAML by default (see {@link #toYaml}) — the
  * compact exchange form — and only returned as JSON when the caller explicitly asks for it.
