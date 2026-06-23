@@ -5,6 +5,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -17,6 +18,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -73,6 +75,37 @@ final class CedarLifecycleIT
       if (id != null) {
         CallToolResult deleted = call("delete_template", Map.of("id", id));
         // Cleanup must succeed — surface a failure loudly rather than leaving the artifact behind.
+        assertFalse(deleted.isError(), "CLEANUP failed for " + id + ": " + text(deleted));
+      }
+    }
+  }
+
+  @Test void update_changes_a_field_and_persists() throws Exception
+  {
+    // PUT coverage: create a template, change a field via update_template, confirm it persisted.
+    // The server's PUT response is a resource wrapper (pathInfo/permissions), not the bare
+    // artifact, so the change is verified with a follow-up get — which returns the artifact form —
+    // rather than parsed off the PUT response.
+    String original = "type: template\nname: PUT Lifecycle IT\ndescription: original\n";
+
+    String id = null;
+    try {
+      CallToolResult created = call("create_template", Map.of("artifact", original));
+      assertFalse(created.isError(), "create failed: " + text(created));
+      id = extractId(text(created));
+      assertNotNull(id, "created template did not report an @id; got:\n" + text(created));
+
+      String updated = "type: template\nname: PUT Lifecycle IT\ndescription: changed\nid: " + id + "\n";
+      CallToolResult put = call("update_template", Map.of("id", id, "artifact", updated));
+      assertFalse(put.isError(), "update (PUT) failed: " + text(put));
+
+      CallToolResult fetched = call("get_template", Map.of("id", id));
+      assertFalse(fetched.isError(), "get-after-update failed: " + text(fetched));
+      assertTrue(text(fetched).contains("changed"),
+          "the updated description must persist; got:\n" + text(fetched));
+    } finally {
+      if (id != null) {
+        CallToolResult deleted = call("delete_template", Map.of("id", id));
         assertFalse(deleted.isError(), "CLEANUP failed for " + id + ": " + text(deleted));
       }
     }

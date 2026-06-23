@@ -115,6 +115,22 @@ final class CedarRestToolsTest
         "create must still null the top-level @id; got: " + http.body);
   }
 
+  @Test void update_puts_to_the_id_path_with_the_body()
+  {
+    FakeHttp http = new FakeHttp(200, "{}");
+    String id = "https://repo.metadatacenter.org/templates/abc";
+
+    invoke(http, "update_template", Map.of(
+        "id", id,
+        "artifact", "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"@id\":\"" + id + "\","
+            + "\"schema:name\":\"Demo\"}"));
+
+    assertEquals("PUT", http.method);
+    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", http.path);
+    assertTrue(http.body.contains(TEMPLATE_TYPE_IRI),
+        "the artifact must be sent in the PUT body; got: " + http.body);
+  }
+
   @Test void get_url_encodes_the_iri_into_the_path()
   {
     FakeHttp http = new FakeHttp(200, "{}");
