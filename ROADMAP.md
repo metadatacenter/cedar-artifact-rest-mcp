@@ -14,11 +14,15 @@ is out of scope, so the boundaries don't drift.
   {template, element, field, instance} (16 tools).
 - **Server-side validation**: `validate_artifact` → `POST /command/validate` (the
   authoritative meta-model validator; complements `cedar-artifact-mcp`'s client-side one).
-- **JSON end to end**: artifacts go in as JSON and come back as JSON — the CEDAR server's own
-  wire format. No YAML conversion and no `cedar-artifact-library` dependency; converting to/from
-  YAML is `cedar-artifact-mcp`'s job (`*_to_json` / `*_to_yaml`), which the orchestrating LLM
-  runs on either side of a REST call. A YAML body is redirected there rather than parsed. This
-  MCP therefore resolves entirely from Maven Central.
+- **YAML or JSON on the boundary**: artifacts may be supplied as the compact YAML exchange form
+  or as JSON; YAML is read into the model and converted to JSON via `cedar-artifact-library`
+  before it is sent (the MCP speaks JSON to the server today, though the server now accepts YAML
+  too — see the YAML-straight-through item under Deferred). Fetched artifacts are returned as YAML
+  by default — an order of magnitude smaller and lossless — or as JSON when the caller passes
+  `format: json`. A sparse instance is inflated against its template (fetched by its
+  `schema:isBasedOn`) before `create` / `update`, so callers can hand over lean YAML. Because of
+  the `cedar-artifact-library` dependency (a local SNAPSHOT today), this MCP does not resolve
+  from Maven Central alone.
 - **Create `@id` handling**: `create_*` forces the top-level `@id` to JSON `null` so the
   server assigns one; the assigned `@id` comes back in the response. `update_*` preserves
   the `@id` (it identifies the artifact; path `{id}` and body `@id` must agree).
@@ -42,9 +46,11 @@ is out of scope, so the boundaries don't drift.
 - **Lifecycle / versioning** — `/command/create-draft-artifact`, `/command/publish-artifact`,
   `make-artifact-open` / `make-artifact-not-open`: the draft → publish workflow. These are
   mutating and partly irreversible; revisit deliberately.
-- **YAML on the wire** — if the REST API ever accepts YAML, this MCP could pass a caller's
-  YAML straight through (and request YAML responses), letting callers skip the
-  `cedar-artifact-mcp` conversion hop for REST-only workflows. Not a v1 concern.
+- **YAML straight through (skip the conversion)** — the CEDAR server now accepts and returns
+  YAML, so this MCP could send the caller's YAML body unchanged and request YAML responses,
+  dropping the YAML↔JSON conversion (and the inflate-before-send) hop entirely. Today it converts
+  via `cedar-artifact-library`; going YAML-native would also shed that dependency, letting the MCP
+  resolve from Maven Central again. Verify the server's YAML content-negotiation first.
 
 ## Out of scope
 
