@@ -27,6 +27,13 @@ is out of scope, so the boundaries don't drift.
 
 ## Deferred (planned, not in v1)
 
+- **Normalize the `update_*` (PUT) response** — the resource server's `PUT /{type}/{id}` returns a
+  resource *wrapper* (`resourceType`, `pathInfo`, folder/permission metadata, `@context`) rather
+  than the bare artifact that `get_*` / `create_*` return. Because that wrapper isn't a parseable
+  CEDAR artifact, `update_*` falls back to returning the raw JSON wrapper instead of the clean YAML
+  the rest of the surface emits. After a successful PUT, re-fetch the artifact (a follow-up `GET`)
+  — or unwrap it from the response — and return it in the normal artifact form (YAML by default),
+  so update matches `get` / `create`. Confirmed live against staging on 2026-06-23.
 - **`folder_id` on create** — v1 creates artifacts in the caller's home folder. Add the
   optional `folder_id` query parameter (`POST /templates?folder_id=<IRI>`, etc.) so an
   artifact can be placed in a chosen folder.
