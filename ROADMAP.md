@@ -2,7 +2,7 @@
 
 `cedar-artifact-rest-mcp` wraps the CEDAR **resource server** REST API to manage artifacts —
 templates, template-elements, template-fields, and template-instances. It is the I/O
-counterpart to `cedar-artifact-mcp`: that one builds, converts, and validates artifacts
+counterpart to `cedar-artifact-mcp`. That one builds, converts, and validates artifacts
 in memory; this one persists them to, and fetches them from, a live CEDAR server.
 
 This document records what's in the first version, what's deliberately deferred, and what

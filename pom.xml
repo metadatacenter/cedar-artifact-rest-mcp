@@ -14,11 +14,10 @@
   <description>
     MCP server that manages CEDAR artifacts (templates, elements, fields, instances) through
     the CEDAR resource-server REST API — the artifact surface only, not folders, search, users,
-    or permissions. The I/O counterpart to cedar-artifact-mcp: it persists
-    artifacts to, and fetches them from, a live CEDAR server. Speaks the server's wire format —
-    JSON. Artifact bodies may be supplied as YAML or JSON; YAML is converted to canonical CEDAR
-    JSON via cedar-artifact-library before it is sent, so an LLM can hand over the compact form
-    rather than the large JSON.
+    or permissions. The I/O counterpart to cedar-artifact-mcp. It persists
+    artifacts to, and fetches them from, a live CEDAR server. Artifact bodies may be supplied as
+    YAML or JSON; YAML is converted to JSON via cedar-artifact-library before it is sent, so an LLM
+    can hand over the compact form rather than the large JSON.
   </description>
 
   <properties>

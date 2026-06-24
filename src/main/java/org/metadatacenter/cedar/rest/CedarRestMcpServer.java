@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * MCP server that manages CEDAR artifacts through the CEDAR resource-server REST API. The I/O
- * counterpart to {@code cedar-artifact-mcp}: it persists artifacts to, and fetches them from, a
+ * counterpart to {@code cedar-artifact-mcp} — it persists artifacts to, and fetches them from, a
  * live CEDAR server.
  *
  * <p>CRUD tools ({@code get / create / update / delete} × template/element/field/instance) are
