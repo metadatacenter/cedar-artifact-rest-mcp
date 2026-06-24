@@ -21,8 +21,8 @@ import java.util.function.BiFunction;
  * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. Artifact bodies are supplied
  * as YAML (the compact exchange form); JSON is also accepted on input. YAML is converted to
  * JSON via {@code cedar-artifact-library} before it's sent (the server now accepts YAML too).
- * Responses are rendered back to YAML by default; render a fetched
- * artifact to YAML for display with {@code cedar-artifact-mcp}'s {@code *_to_yaml}. {@code create}
+ * Responses are rendered back to YAML by default, or as JSON when the caller
+ * passes {@code format: json}. {@code create}
  * nulls the top-level {@code @id} so the server assigns one. Non-2xx responses surface the server's
  * status and body as an error result (errors are content).
  */
@@ -313,7 +313,7 @@ final class ArtifactCrudTools
   private static String instanceUploadHint(ArtifactType type)
   {
     return type == ArtifactType.INSTANCE
-        ? " A sparse instance is fine: its empty fields are materialized against its template "
+        ? " A sparse instance is fine — its empty fields are materialized against its template "
             + "(fetched via the instance's schema:isBasedOn) before upload, so pass the lean YAML "
             + "directly — no need to fill in empty fields or convert to JSON."
         : "";

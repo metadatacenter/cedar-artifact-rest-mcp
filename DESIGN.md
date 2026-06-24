@@ -26,8 +26,8 @@ representation: the artifact *model* is what's canonical, and JSON and YAML are 
 serializations of it (cedar-artifact-mcp Principle 8) — JSON is the serialization this conduit
 happens to use on the wire, and the server, validator, and meta-schema all speak it. CEDAR artifacts also travel as
 compact YAML (the human-friendly serialization), and converting between that and the server's JSON
-is `cedar-artifact-mcp`'s job: its `*_to_json` and
-`*_to_yaml` tools exist for exactly this boundary, and the orchestrating LLM runs them on either
+is `cedar-artifact-mcp`'s job — its `render_schema_artifact` / `render_instance_artifact` tools
+(with `format: yaml` the default, `format: json` for JSON) exist for exactly this boundary, and the orchestrating LLM runs them on either
 side of a REST call. Conversion lived here once (reusing the library); folding it back into the
 single MCP that already owns it removed a duplicated copy of the readers/renderers and let this MCP
 resolve entirely from Maven Central. A caller

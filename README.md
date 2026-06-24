@@ -2,7 +2,7 @@
 
 An MCP server that manages CEDAR **artifacts** — templates, elements, fields, and instances —
 through the CEDAR [**resource-server REST API**](https://resource.metadatacenter.org/api/). It is the I/O counterpart to
-[`cedar-artifact-mcp`](../cedar-artifact-mcp): that one builds, converts, and validates artifacts
+[`cedar-artifact-mcp`](../cedar-artifact-mcp). That one builds, converts, and validates artifacts
 in memory; this one persists them to, and fetches them from, a live CEDAR server.
 
 It deliberately covers **only the artifact corner** of that REST API — create / fetch / update /
@@ -87,7 +87,7 @@ that id. From then on the server `@id` is the handle — it is what you pass to 
 `delete`. Only the **top-level** `@id` is reassigned; the embedded field ids (`0252465c…`,
 `cbb34a8a…`) ride through unchanged.
 
-Two server behaviors to expect on store: it **requires** a `version` and `status` (both supplied
+On store, expect two behaviors. It **requires** a `version` and `status` (both supplied
 automatically by `cedar-artifact-mcp` when it builds the artifact), and it **rewrites** the
 JSON-Schema `title` / `description` while leaving `schema:name` / `schema:description` alone.
 
