@@ -163,7 +163,7 @@ final class CedarRestToolsTest
 
   @Test void get_returns_yaml_by_default()
   {
-    // A full template the model reader can re-read: round-trip a compact-YAML template through
+    // A full template the model reader can re-read — round-trip a compact-YAML template through
     // the codec to JSON, hand that back as the server body, and expect YAML out.
     String templateJson = ArtifactCodec.toObjectNode("type: template\nname: Demo\n").toString();
 

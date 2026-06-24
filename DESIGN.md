@@ -22,7 +22,7 @@ This MCP goes through JSON on the wire — artifacts are sent as JSON and the JS
 is read back, end to end. (The CEDAR server now accepts and returns both YAML and JSON; this MCP
 still travels over JSON.) It does **not** convert to or from YAML, and carries no dependency on
 `cedar-artifact-library`. JSON here is just one serialization, not a privileged
-representation: the artifact *model* is what's canonical, and JSON and YAML are equal
+representation. The artifact *model* is what's canonical, and JSON and YAML are equal
 serializations of it (cedar-artifact-mcp Principle 8) — JSON is the serialization this conduit
 happens to use on the wire, and the server, validator, and meta-schema all speak it. CEDAR artifacts also travel as
 compact YAML (the human-friendly serialization), and converting between that and the server's JSON
@@ -41,7 +41,7 @@ returns it). It overwrites whatever the caller's artifact carried — notably an
 and body `@id` must agree).
 
 Only the **top-level** `@id` is nulled. Nested element/field `@id`s are submitted exactly as the
-artifact carries them — this is the correct behaviour: the server assigns the artifact's own
+artifact carries them — this is the correct behaviour, since the server assigns the artifact's own
 identity and accepts whatever the nested children carry. (Artifacts produced by `cedar-artifact-mcp`
 are child-`@id`-less anyway — it mints a top-level `@id` only — so the common path submits no
 nested `@id`s to begin with.)
@@ -96,7 +96,7 @@ The CEDAR server demands that a persisted artifact carry a version (`pav:version
 (`bibo:status`); an artifact missing either is rejected on `create`/`update`.
 
 This MCP sends the JSON it is given **untouched**, so the version/status must already be present in
-that JSON. In practice they are: `cedar-artifact-mcp`'s `*_to_json` renders them from the artifact,
+that JSON. In practice they are — `cedar-artifact-mcp`'s `*_to_json` renders them from the artifact,
 and the library defaults a top-level artifact's `version`/`status` to `0.0.1` / `draft` when
 absent — so a JSON body produced by the normal authoring path always carries them, with nothing to
 set by hand. A JSON artifact assembled by other means must include them itself.

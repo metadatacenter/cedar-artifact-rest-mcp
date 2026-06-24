@@ -17,7 +17,7 @@ deferred work.
 
 A typical session looks like the following — natural-language prompts the user gives the LLM,
 which it translates into REST MCP tool calls against a live CEDAR server. This MCP is the
-**persistence half** of the pipeline: author and shape an artifact in memory with
+**persistence half** of the pipeline — author and shape an artifact in memory with
 [`cedar-artifact-mcp`](../cedar-artifact-mcp), then hand it here to validate, save, fetch, update,
 or remove it. This MCP speaks the CEDAR server's wire format — **JSON** — both ways: artifacts go
 in as JSON and come back as JSON. Converting to and from YAML (the compact, human-friendly
@@ -79,7 +79,7 @@ children:
 ```
 
 `create_template` deliberately blanks the top-level `@id` before sending. In CEDAR an artifact's
-identity is the **repository's** to assign, not the author's: a template you build locally carries
+identity is the **repository's** to assign, not the author's — a template you build locally carries
 only a provisional `@id` (above, `…/templates/76cf7229…`, minted by `cedar-artifact-mcp` so the
 artifact is well-formed in transit), and on `create` the server discards it, mints an authoritative
 IRI under its own namespace (`…/templates/0e8f3a91…`), and returns the stored artifact carrying

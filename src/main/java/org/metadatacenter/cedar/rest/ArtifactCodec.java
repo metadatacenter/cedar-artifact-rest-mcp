@@ -24,14 +24,13 @@ import java.util.Map;
 
 /**
  * Artifact codec for the REST tools. The CEDAR server now accepts and returns both YAML and JSON;
- * this codec still goes through JSON on the wire — sending JSON and reading the JSON the server
- * serves. Callers supply an artifact as the compact
- * YAML the rest of the ecosystem trades in (CEDAR JSON is large enough that handing it
- * to an LLM is impractical), with JSON also accepted — so this codec accepts both: YAML is read
- * into the artifact model with {@code cedar-artifact-library} and converted to JSON before it goes
- * to the server.
- * On the way back, a fetched artifact is rendered to YAML by default (see {@link #toYaml}) — the
- * compact exchange form — and only returned as JSON when the caller explicitly asks for it.
+ * this codec still goes through JSON on the wire, sending JSON and reading the JSON the server
+ * serves. Callers supply an artifact as the compact YAML the rest of the ecosystem trades in
+ * (CEDAR JSON is large enough that handing it to an LLM is impractical), or as JSON. Either way it
+ * is read into the artifact model with {@code cedar-artifact-library} and converted to JSON before
+ * it goes to the server. On the way back, a fetched artifact is rendered to YAML by default (see
+ * {@link #toYaml}) — the compact exchange form — and only returned as JSON when the caller
+ * explicitly asks for it.
  */
 final class ArtifactCodec
 {
@@ -56,7 +55,7 @@ final class ArtifactCodec
   /**
    * Render a fetched artifact — CEDAR JSON straight from the server — as YAML. The kind
    * is supplied by the caller (each REST tool knows its own {@link ArtifactType}), so no
-   * {@code @type} sniffing is needed. The YAML is the expanded, lossless exchange form: an order of
+   * {@code @type} sniffing is needed. The YAML is the expanded, lossless exchange form — an order of
    * magnitude smaller than the JSON yet carrying every field (including provenance, version, and
    * status), so it round-trips back through {@code update_*} without losing anything.
    */
@@ -114,7 +113,7 @@ final class ArtifactCodec
   }
 
   /**
-   * Force the top-level {@code @id} to JSON {@code null} for a create: the server assigns the real
+   * Force the top-level {@code @id} to JSON {@code null} for a create — the server assigns the real
    * identity and returns it. Overwrites whatever the caller's artifact carried.
    */
   static void nullifyTopLevelId(ObjectNode node)
