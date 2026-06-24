@@ -40,7 +40,7 @@
   </properties>
 
   <dependencies>
-    <!-- CEDAR artifact model — reads compact YAML and renders canonical CEDAR JSON, so this MCP
+    <!-- CEDAR artifact model — reads compact YAML and renders CEDAR JSON, so this MCP
          can accept YAML artifact bodies and convert them before sending to the server. -->
     <dependency>
       <groupId>org.metadatacenter</groupId>
