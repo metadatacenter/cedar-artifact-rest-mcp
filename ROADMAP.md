@@ -50,7 +50,9 @@ is out of scope, so the boundaries don't drift.
   YAML, so this MCP could send the caller's YAML body unchanged and request YAML responses,
   dropping the YAML↔JSON conversion (and the inflate-before-send) hop entirely. Today it converts
   via `cedar-artifact-library`; going YAML-native would also shed that dependency, letting the MCP
-  resolve from Maven Central again. Verify the server's YAML content-negotiation first.
+  resolve from Maven Central again. Verify the server's YAML content-negotiation first. This is
+  specific to rest-mcp — it does not generalize to cee-mcp, whose conversion feeds the CEE web
+  component (which consumes JSON), not the server, so cee-mcp keeps the library regardless.
 
 ## Out of scope
 
