@@ -62,7 +62,8 @@ final class ArtifactCrudTools
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
                 + "artifact as YAML (the compact exchange form — an order of magnitude smaller than "
                 + "JSON and lossless), or as JSON only if you pass format: json. "
-                + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize.")
+                + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize."
+                + authoringPointer(type))
         .inputSchema(schema(properties, List.of("id")))
         .build();
 
@@ -102,7 +103,8 @@ final class ArtifactCrudTools
                 + "exchange form), or as JSON only if you pass format: json. WRITES to "
                 + "the server. Supply the artifact inline as YAML (the compact form "
                 + "cedar-artifact-mcp returns); JSON is also accepted. Pass it verbatim, "
-                + "don't reformat." + instanceUploadHint(type))
+                + "don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
+                + instanceValueVocabulary(type))
         .inputSchema(schema(properties, List.of("artifact")))
         .build();
 
@@ -153,7 +155,8 @@ final class ArtifactCrudTools
                 + "as YAML (the compact exchange form), or as JSON only if you pass "
                 + "format: json. WRITES to the server. Supply the artifact inline as YAML (the "
                 + "compact form cedar-artifact-mcp returns); JSON is also accepted. Pass it "
-                + "verbatim, don't reformat." + instanceUploadHint(type))
+                + "verbatim, don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
+                + instanceValueVocabulary(type))
         .inputSchema(schema(properties, List.of("id", "artifact")))
         .build();
 
@@ -319,6 +322,48 @@ final class ArtifactCrudTools
         : "";
   }
 
+  /**
+   * Tells the caller not to build CEDAR JSON-LD by hand, and names the three shapes that make it a
+   * losing errand. Every tool that accepts an artifact carries this: an LLM holding a template's
+   * JSON Schema will otherwise derive the matching JSON-LD from it, which is reasonable, laborious,
+   * and wrong in ways the schema does not advertise.
+   */
+  private static String noHandBuiltJsonLd()
+  {
+    return " Do not hand-author CEDAR JSON-LD. Its @context block, the @id every nested element "
+        + "instance carries, and the attribute-value shape are all easy to get wrong and are not "
+        + "obvious from a template's JSON Schema. Author the compact YAML instead and let this tool "
+        + "produce the JSON.";
+  }
+
+  /**
+   * The compact YAML value vocabulary, in full, for instances. Duplicated into every tool that takes
+   * an instance rather than kept in one place: the shape question ("what does a populated field look
+   * like?") is asked at the moment of authoring, and a caller reading create_instance cannot be
+   * expected to have read a rendering tool's description first.
+   */
+  private static String instanceValueVocabulary(ArtifactType type)
+  {
+    if (type != ArtifactType.INSTANCE)
+      return "";
+    return "\n\nChild values under 'children:', keyed by the template's child key:\n"
+        + "  text, textarea, email, phone   value: Bob\n"
+        + "  numeric                        datatype: xsd:int, value: 42\n"
+        + "  temporal                       datatype: xsd:date, value: 2026-05-04\n"
+        + "  radio, checkbox, list          value: Option A   (one of the field's declared literals)\n"
+        + "  controlled term, link, ext-*   id: <IRI>, label: disease   (IRI-valued, not a literal)\n"
+        + "  language-tagged literal        value: Bob, language: en\n"
+        + "  multi-instance field           a list of the above, e.g. [{value: one}, {value: two}]\n"
+        + "  element                        children: {...}; multi-instance, a list of those\n"
+        + "Two rules the template states and a generated instance must honour: a multi-instance "
+        + "field's own minItems/maxItems (they differ per field — one may demand three entries while "
+        + "its neighbour allows one), and static fields (section break, page break, rich text, image, "
+        + "video) which carry no value at all and are omitted entirely.\n"
+        + "Attribute-value fields have no compact-form spelling today: the JSON form expects an array "
+        + "of attribute *names* with each value as a sibling property. Omit them — they are optional — "
+        + "rather than guessing a shape that will be rejected.";
+  }
+
   private static Map<String, Object> idProperty(ArtifactType type)
   {
     return Map.of("type", "string", "description",
@@ -327,11 +372,30 @@ final class ArtifactCrudTools
             + "handled for you; pass the plain IRI.");
   }
 
+  /**
+   * Points a caller fetching a template at the cheap way to author an instance from it. Placed on
+   * the fetch rather than only on create because the choice of representation is made here: a caller
+   * that has already pulled the template as JSON tends to keep working in JSON, and by the time it
+   * reads create_instance the expensive path is under way.
+   */
+  private static String authoringPointer(ArtifactType type)
+  {
+    return type == ArtifactType.TEMPLATE
+        ? " To author an instance of this template, send create_instance compact YAML naming this "
+            + "template in isBasedOn — you do not need to send the template back, and you do not "
+            + "need to derive JSON-LD from its JSON Schema."
+        : "";
+  }
+
   private static Map<String, Object> artifactProperty(ArtifactType type)
   {
     return Map.of("type", "string", "description",
         "The CEDAR " + type.noun + " as YAML (the compact exchange form cedar-artifact-mcp "
-            + "produces); JSON is also accepted. Pass it inline, verbatim.");
+            + "produces); JSON is also accepted. Pass it inline, verbatim."
+            + (type == ArtifactType.INSTANCE
+                ? " Author it as compact YAML rather than as CEDAR JSON-LD; see the tool description "
+                    + "for the child value vocabulary."
+                : ""));
   }
 
   private static Map<String, Object> formatProperty()
