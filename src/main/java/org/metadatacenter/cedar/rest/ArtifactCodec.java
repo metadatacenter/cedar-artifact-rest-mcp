@@ -3,14 +3,6 @@ package org.metadatacenter.cedar.rest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.metadatacenter.artifacts.model.core.Artifact;
-import org.metadatacenter.artifacts.model.core.TemplateInstanceArtifact;
-import org.metadatacenter.artifacts.model.core.TemplateSchemaArtifact;
-import org.metadatacenter.artifacts.model.reader.JsonArtifactReader;
-import org.metadatacenter.artifacts.model.reader.YamlArtifactReader;
-import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
-import org.metadatacenter.artifacts.model.tools.InstanceInflater;
-import org.metadatacenter.artifacts.model.tools.YamlSerializer;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -23,123 +15,103 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Artifact codec for the REST tools. The CEDAR server now accepts and returns both YAML and JSON;
- * this codec still goes through JSON on the wire, sending JSON and reading the JSON the server
- * serves. Callers supply an artifact as the compact YAML the rest of the ecosystem trades in
- * (CEDAR JSON is large enough that handing it to an LLM is impractical), or as JSON. Either way it
- * is read into the artifact model with {@code cedar-artifact-library} and converted to JSON before
- * it goes to the server. On the way back, a fetched artifact is rendered to YAML by default (see
- * {@link #toYaml}) — the compact exchange form — and only returned as JSON when the caller
- * explicitly asks for it.
+ * What the REST tools need to know about an artifact before handing it to the server: which
+ * serialization it is written in, which kind it is, and how to strip an identifier the caller should
+ * not be supplying.
+ *
+ * <p>Nothing here reads an artifact into the model. Artifacts travel to and from the server in the
+ * serialization the caller used — YAML by default, and CEDAR's JSON-LD when the caller asks for it —
+ * and the server reads and writes both, so nothing is gained by converting first: a document that
+ * arrives unaltered is a document this MCP cannot damage. Even a sparse instance goes as it was
+ * written; the server completes it against its template, since the empty fields its stored JSON has
+ * to carry are a requirement of that serialization and have no YAML spelling at all.
  */
 final class ArtifactCodec
 {
   static final String JSON_LD_ID = "@id";
+  static final String YAML_ID = "id";
 
   // CEDAR JSON-LD type IRIs and keys used to identify an artifact's kind, for validate_artifact.
   private static final String TEMPLATE_TYPE_IRI = "https://schema.metadatacenter.org/core/Template";
   private static final String ELEMENT_TYPE_IRI = "https://schema.metadatacenter.org/core/TemplateElement";
   private static final String FIELD_TYPE_IRI = "https://schema.metadatacenter.org/core/TemplateField";
   private static final String STATIC_FIELD_TYPE_IRI = "https://schema.metadatacenter.org/core/StaticTemplateField";
-  private static final String SCHEMA_IS_BASED_ON = "schema:isBasedOn";
+  private static final String JSON_IS_BASED_ON = "schema:isBasedOn";
 
   private static final ObjectMapper JACKSON = new ObjectMapper();
-  // Compact-mode reader: accepts the lean authoring YAML (an absent modelVersion defaults).
-  private static final YamlArtifactReader YAML_READER = new YamlArtifactReader(true);
-  private static final JsonArtifactRenderer JSON_RENDERER = new JsonArtifactRenderer();
-  // Reads CEDAR JSON (what the server serves) into the artifact model for YAML rendering.
-  private static final JsonArtifactReader JSON_READER = new JsonArtifactReader();
 
   private ArtifactCodec() {}
 
-  /**
-   * Render a fetched artifact — CEDAR JSON straight from the server — as YAML. The kind
-   * is supplied by the caller (each REST tool knows its own {@link ArtifactType}), so no
-   * {@code @type} sniffing is needed. The YAML is the expanded, lossless exchange form — an order of
-   * magnitude smaller than the JSON yet carrying every field (including provenance, version, and
-   * status), so it round-trips back through {@code update_*} without losing anything.
-   */
-  static String toYaml(ArtifactType type, ObjectNode node)
+  /** The serialization {@code text} is written in. */
+  static ArtifactFormat formatOf(String text)
   {
-    Artifact artifact = switch (type) {
-      case TEMPLATE -> JSON_READER.readTemplateSchemaArtifact(node);
-      case ELEMENT -> JSON_READER.readElementSchemaArtifact(node);
-      case FIELD -> JSON_READER.readFieldSchemaArtifact(node);
-      case INSTANCE -> JSON_READER.readTemplateInstanceArtifact(node);
-    };
-    return YamlSerializer.getYAML(artifact, false, false);
+    return looksLikeJson(text) ? ArtifactFormat.JSON : ArtifactFormat.YAML;
   }
 
-  /** The template IRI an instance is based on ({@code schema:isBasedOn}), or null if absent. */
-  static String isBasedOn(ObjectNode instanceJson)
+  /** Whether {@code text} is JSON (vs YAML); used to pick the parse path. */
+  static boolean looksLikeJson(String text)
   {
-    JsonNode node = instanceJson.path(SCHEMA_IS_BASED_ON);
-    return node.isTextual() ? node.asText() : null;
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (Character.isWhitespace(c)) continue;
+      return c == '{';
+    }
+    return false;
   }
 
   /**
-   * Inflate a (possibly sparse) instance against its template, returning the complete instance
-   * JSON. A YAML-sourced instance omits empty fields, but the server's validator requires every
-   * template property present; inflation materializes the missing empty slots. Pure — the caller
-   * supplies the template JSON (the REST tools fetch it from the server).
+   * The artifact's kind, read from the YAML {@code type:} discriminator or from the JSON-LD
+   * {@code @type}. Used by {@code validate_artifact}, which the caller does not tell which kind it
+   * is passing.
    */
-  static ObjectNode inflateInstance(ObjectNode templateJson, ObjectNode instanceJson)
+  static ArtifactType detectKind(String text)
   {
-    TemplateSchemaArtifact template = JSON_READER.readTemplateSchemaArtifact(templateJson);
-    TemplateInstanceArtifact instance = JSON_READER.readTemplateInstanceArtifact(instanceJson);
-    return JSON_RENDERER.renderTemplateInstanceArtifact(InstanceInflater.inflate(template, instance));
+    return looksLikeJson(text) ? kindFromJsonLdType(asObjectNode(text)) : kindFromYamlType(parseYamlMap(text));
   }
 
   /**
-   * Parse an incoming artifact — YAML or JSON — into a CEDAR JSON {@code ObjectNode}.
-   * JSON is parsed as-is; YAML is read into the artifact model and re-rendered to JSON, with the
-   * kind taken from the YAML {@code type:} discriminator (anything that isn't template / element /
-   * instance / element-instance is a field kind).
+   * The artifact with its identity left to the server, for a create. The server mints every
+   * identifier — an artifact's own and its children's — and refuses a create whose artifact already
+   * names itself, so a caller that repeats a fetched artifact to copy it would otherwise be rejected
+   * for carrying the original's identity.
+   *
+   * <p>The two serializations spell "no identifier" differently. JSON says it with an explicit
+   * {@code "@id": null}, which the instance endpoint requires and reads as a request for one; YAML
+   * has no null to say it with, so the key is dropped, which is the same request. A YAML document
+   * that names nothing is returned exactly as it came: the common path leaves the caller's text
+   * untouched, and only the copy case is re-serialized.
    */
-  static ObjectNode toObjectNode(String text)
-  {
-    if (looksLikeJson(text))
-      return asObjectNode(text);
-
-    LinkedHashMap<String, Object> map = parseYamlMap(text);
-    String type = map.get("type") == null ? "" : String.valueOf(map.get("type"));
-    return switch (type) {
-      case "template" -> JSON_RENDERER.renderTemplateSchemaArtifact(YAML_READER.readTemplateSchemaArtifact(map));
-      case "element" -> JSON_RENDERER.renderElementSchemaArtifact(YAML_READER.readElementSchemaArtifact(map));
-      case "instance" -> JSON_RENDERER.renderTemplateInstanceArtifact(YAML_READER.readTemplateInstanceArtifact(map));
-      case "element-instance" -> JSON_RENDERER.renderElementInstanceArtifact(YAML_READER.readElementInstanceArtifact(map));
-      default -> JSON_RENDERER.renderFieldSchemaArtifact(YAML_READER.readFieldSchemaArtifact(map));
-    };
-  }
-
-  /**
-   * Force the top-level {@code @id} to JSON {@code null} for a create — the server assigns the real
-   * identity and returns it. Overwrites whatever the caller's artifact carried.
-   */
-  static void nullifyTopLevelId(ObjectNode node)
-  {
-    node.putNull(JSON_LD_ID);
-  }
-
-  /** An artifact detected for validation: its kind and the JSON body to send to the server. */
-  record Detected(ArtifactType type, String json) {}
-
-  /**
-   * Normalize an artifact (YAML or JSON) for {@code /command/validate}: YAML is converted to JSON
-   * first; JSON is validated exactly as received. Either way the kind is detected from
-   * the resulting {@code @type}.
-   */
-  static Detected forValidation(String text)
+  static String askServerToMintIdentifier(String text)
   {
     if (looksLikeJson(text)) {
       ObjectNode node = asObjectNode(text);
-      return new Detected(detectFromJson(node), text);
+      node.putNull(JSON_LD_ID);
+      return compactJson(node);
     }
-    ObjectNode node = toObjectNode(text);
-    return new Detected(detectFromJson(node), compactJson(node));
+    LinkedHashMap<String, Object> map = parseYamlMap(text);
+    if (!map.containsKey(YAML_ID))
+      return text;
+    map.remove(YAML_ID);
+    return newYaml().dump(map);
   }
 
-  private static ArtifactType detectFromJson(ObjectNode node)
+  private static ArtifactType kindFromYamlType(Map<String, Object> map)
+  {
+    String type = map.get("type") == null ? "" : String.valueOf(map.get("type"));
+    return switch (type) {
+      case "template" -> ArtifactType.TEMPLATE;
+      case "element" -> ArtifactType.ELEMENT;
+      case "instance" -> ArtifactType.INSTANCE;
+      case "element-instance" -> throw new IllegalArgumentException(
+          "the server validates templates, elements, fields and instances; an element instance is "
+              + "validated as part of the template instance that carries it");
+      case "" -> throw new IllegalArgumentException(
+          "the YAML names no artifact kind — it needs a 'type:' key");
+      default -> ArtifactType.FIELD;
+    };
+  }
+
+  private static ArtifactType kindFromJsonLdType(ObjectNode node)
   {
     String typeIri = firstType(node);
     if (typeIri != null) {
@@ -147,7 +119,7 @@ final class ArtifactCodec
       if (ELEMENT_TYPE_IRI.equals(typeIri)) return ArtifactType.ELEMENT;
       if (FIELD_TYPE_IRI.equals(typeIri) || STATIC_FIELD_TYPE_IRI.equals(typeIri)) return ArtifactType.FIELD;
     }
-    if (node.hasNonNull(SCHEMA_IS_BASED_ON)) return ArtifactType.INSTANCE;
+    if (node.hasNonNull(JSON_IS_BASED_ON)) return ArtifactType.INSTANCE;
     throw new IllegalArgumentException(
         "could not determine artifact kind from @type — pass a recognizable CEDAR artifact");
   }
@@ -162,17 +134,6 @@ final class ArtifactCodec
     return null;
   }
 
-  /** Whether {@code text} is JSON (vs YAML); used to pick the parse path. */
-  static boolean looksLikeJson(String text)
-  {
-    for (int i = 0; i < text.length(); i++) {
-      char c = text.charAt(i);
-      if (Character.isWhitespace(c)) continue;
-      return c == '{';
-    }
-    return false;
-  }
-
   static ObjectNode asObjectNode(String text)
   {
     try {
@@ -182,15 +143,6 @@ final class ArtifactCodec
       return objectNode;
     } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
       throw new RuntimeException("JSON parse failed: " + e.getOriginalMessage(), e);
-    }
-  }
-
-  static String prettyJson(JsonNode node)
-  {
-    try {
-      return JACKSON.writerWithDefaultPrettyPrinter().writeValueAsString(node);
-    } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-      throw new RuntimeException("JSON serialize failed: " + e.getMessage(), e);
     }
   }
 
@@ -224,6 +176,7 @@ final class ArtifactCodec
   {
     LoaderOptions loaderOptions = new LoaderOptions();
     DumperOptions dumperOptions = new DumperOptions();
+    dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
     return new Yaml(new SafeConstructor(loaderOptions), new Representer(dumperOptions),
         dumperOptions, loaderOptions, new NoTimestampResolver());
   }

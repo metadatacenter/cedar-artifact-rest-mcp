@@ -10,11 +10,11 @@ import java.util.function.BiFunction;
 
 /**
  * Tool {@code validate_artifact} — validates a CEDAR artifact against the meta-model using the
- * server's authoritative {@code POST /command/validate}. Accepts the artifact as YAML (JSON is also
- * accepted); this codec converts YAML to JSON before sending (the server also accepts YAML). The kind
- * (template / element / field / instance) is
- * auto-detected from the {@code @type}. Returns the server's {@code {validates, warnings, errors}}
- * report.
+ * server's authoritative {@code POST /command/validate}. The artifact is sent in the serialization
+ * the caller wrote it in, YAML or JSON, since the command reads both. The kind (template / element
+ * / field / instance) is read from the YAML {@code type:} discriminator or the JSON {@code @type},
+ * and names the {@code resource_type} the command is given. Returns the server's
+ * {@code {validates, warnings, errors}} report.
  */
 final class ValidateArtifactTool
 {
@@ -35,7 +35,7 @@ final class ValidateArtifactTool
             "Validates a CEDAR artifact against the CEDAR meta-model using the server's "
                 + "/command/validate (authoritative). Supply the artifact as YAML (JSON is also "
                 + "accepted); the "
-                + "kind is auto-detected from its @type. Returns the server's report: "
+                + "kind is auto-detected from its type. Returns the server's report: "
                 + "{\"validates\": true|false, \"warnings\": [...], \"errors\": [...]}. This is a "
                 + "read-only call (no artifact is created). Errors carry a JSON pointer at the "
                 + "offending location, so validate a whole artifact and read the locations rather "
@@ -67,18 +67,20 @@ final class ValidateArtifactTool
           if (text == null || text.isBlank())
             return error("artifact is required and must not be blank");
 
-          ArtifactCodec.Detected detected;
+          ArtifactType type;
+          ArtifactCrudTools.Upload upload;
           try {
-            detected = ArtifactCodec.forValidation(text);
+            type = ArtifactCodec.detectKind(text);
+            upload = ArtifactCrudTools.prepareUpload(text, false);
           } catch (RuntimeException e) {
-            return error("artifact could not be parsed/identified: " + e.getMessage());
+            return error("artifact could not be read or identified: " + e.getMessage());
           }
 
           CedarHttp.CedarResponse response;
           try {
             response = http.request("POST",
-                "/command/validate?resource_type=" + detected.type().validateResourceType,
-                detected.json());
+                "/command/validate?resource_type=" + type.validateResourceType,
+                upload.body(), upload.format(), ArtifactFormat.JSON);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }

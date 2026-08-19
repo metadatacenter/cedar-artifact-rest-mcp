@@ -19,133 +19,145 @@ A typical session looks like the following — natural-language prompts the user
 which it translates into REST MCP tool calls against a live CEDAR server. This MCP is the
 **persistence half** of the pipeline — author and shape an artifact in memory with
 [`cedar-artifact-mcp`](../cedar-artifact-mcp), then hand it here to validate, save, fetch, update,
-or remove it. This MCP speaks the CEDAR server's wire format — **JSON** — both ways: artifacts go
-in as JSON and come back as JSON. Converting to and from YAML (the compact, human-friendly
-serialization) is `cedar-artifact-mcp`'s job — the LLM runs its `*_to_json` to produce the body it
-saves here, and its `*_to_yaml` to render a fetched artifact for display. The YAML shown below is that
-rendered view; the bytes crossing this MCP are JSON.
+or remove it.
+
+Artifacts travel as YAML. The CEDAR server reads and writes both YAML and JSON, so a body goes to
+it exactly as the caller wrote it and a response comes back in the serialization the caller asked
+for — YAML unless they pass `format: json`. Nothing is converted along the way, which is why the
+YAML below is what actually crossed the wire rather than a rendering of something else.
 
 Assume the LLM already has a Patient Study template in hand, authored with `cedar-artifact-mcp`
-(shown as the compact YAML the user sees):
+(shown as the compact YAML the user sees). It names no artifact yet: CEDAR assigns identity when
+the template is created.
 
 ```yaml
 type: template
-name: Patient Study
-id: https://repo.metadatacenter.org/templates/76cf7229-d0ae-462a-a40a-e2f8eeb5d041
+name: "Patient Study"
 children:
-  - key: Patient Name
+  - key: "Patient Name"
     type: text-field
-    name: Patient Name
-    id: https://repo.metadatacenter.org/template-fields/0252465c-1c51-4fae-a41a-a9263bc9dc31
-  - key: Age
+    name: "Patient Name"
+  - key: "Age"
     type: numeric-field
-    name: Age
-    id: https://repo.metadatacenter.org/template-fields/cbb34a8a-d754-4425-b0e9-52f3db4ade08
+    name: "Age"
     datatype: xsd:int
 ```
 
 *Check it against CEDAR's validator before I save it.*
 
 ```json
-{ "validates": true, "warnings": [], "errors": [] }
+{"validates":"true","warnings":[],"errors":[]}
 ```
 
-The LLM converts the template to JSON with `cedar-artifact-mcp`'s `template_to_json`, then
-`validate_artifact` posts that to the server's authoritative validator and returns its report.
-Nothing is created — it is a dry run, usable on any artifact including ones pulled from elsewhere.
-
-That conversion is needed because the CEDAR server's REST API currently speaks **JSON only** —
-every call here (validate, create, update) takes a JSON body, and the LLM renders responses back to
-YAML for display with `template_to_yaml`. The server is expected to accept YAML directly in a later
-release, at which point the conversion hop disappears; JSON is the server's current wire format,
-not a privileged form of the artifact.
+`validate_artifact` posts the template to the server's authoritative validator and returns its
+report. Nothing is created — it is a dry run, usable on any artifact including ones pulled from
+elsewhere.
 
 *Save it to CEDAR.*
 
 ```yaml
 type: template
-name: Patient Study
-id: https://repo.metadatacenter.org/templates/0e8f3a91-7d2c-4b6a-9e1f-5a8c2d0b4e63
+name: "Patient Study"
+id: "https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41"
+status: draft
+version: 0.0.1
+modelVersion: 1.6.0
+createdOn: "2026-08-18T18:49:15-07:00"
+createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
+modifiedOn: "2026-08-18T18:49:15-07:00"
+modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
 children:
-  - key: Patient Name
+  - key: "Patient Name"
     type: text-field
-    name: Patient Name
-    id: https://repo.metadatacenter.org/template-fields/0252465c-1c51-4fae-a41a-a9263bc9dc31
-  - key: Age
+    name: "Patient Name"
+    id: "https://repo.metadatacenter.org/template-fields/f07598a6-1d27-4531-add4-06a3e75d15ae"
+    status: draft
+    version: 0.0.1
+    modelVersion: 1.6.0
+    createdOn: "2026-08-18T18:49:15-07:00"
+    createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
+    modifiedOn: "2026-08-18T18:49:15-07:00"
+    modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
+    configuration:
+      propertyIri: "https://schema.metadatacenter.org/properties/a767fc24-6d7a-478a-a02a-e362562040fa"
+  - key: "Age"
     type: numeric-field
-    name: Age
-    id: https://repo.metadatacenter.org/template-fields/cbb34a8a-d754-4425-b0e9-52f3db4ade08
-    datatype: xsd:int
+    name: "Age"
+    id: "https://repo.metadatacenter.org/template-fields/2228a85a-2e05-4b11-b2d1-1c1dc85aed58"
+    ...
 ```
 
-`create_template` deliberately blanks the top-level `@id` before sending. In CEDAR an artifact's
-identity is the **repository's** to assign, not the author's — a template you build locally carries
-only a provisional `@id` (above, `…/templates/76cf7229…`, minted by `cedar-artifact-mcp` so the
-artifact is well-formed in transit), and on `create` the server discards it, mints an authoritative
-IRI under its own namespace (`…/templates/0e8f3a91…`), and returns the stored artifact carrying
-that id. From then on the server `@id` is the handle — it is what you pass to `get` / `update` /
-`delete`. Only the **top-level** `@id` is reassigned; the embedded field ids (`0252465c…`,
-`cbb34a8a…`) ride through unchanged.
-
-On store, expect two behaviors. It **requires** a `version` and `status` (both supplied
-automatically by `cedar-artifact-mcp` when it builds the artifact), and it **rewrites** the
-JSON-Schema `title` / `description` while leaving `schema:name` / `schema:description` alone.
+`create_template` returns what CEDAR stored, in the full form: the template's identity, one for
+each child, a property IRI per child, provenance, and the `0.0.1` / `draft` the server supplied
+because the template named neither. Everything here that identifies something was minted by the
+server — an artifact reaches it carrying no identity, and any it did carry is stripped before the
+write.
 
 *Fetch it back.*
 
-```yaml
-type: template
-name: Patient Study
-id: https://repo.metadatacenter.org/templates/0e8f3a91-7d2c-4b6a-9e1f-5a8c2d0b4e63
-children:
-  - key: Patient Name
-    type: text-field
-    name: Patient Name
-    id: https://repo.metadatacenter.org/template-fields/0252465c-1c51-4fae-a41a-a9263bc9dc31
-  - key: Age
-    type: numeric-field
-    name: Age
-    id: https://repo.metadatacenter.org/template-fields/cbb34a8a-d754-4425-b0e9-52f3db4ade08
-    datatype: xsd:int
-```
-
-`get_template` takes the artifact's `@id` (the full IRI); URL-encoding into the path is handled for
-you. It returns the artifact as JSON; the LLM renders it back to the YAML above with
-`template_to_yaml` for display.
+`get_template` with that IRI returns the same document. It is the exchange form, so it threads
+straight back into `update_template` without losing provenance, version, or status; pass
+`format: json` when something downstream needs CEDAR's JSON-LD instead.
 
 *Create an instance called Patient Study for Alice, with Patient Name = Alice and Age = 30.*
 
+The LLM builds the instance with `cedar-artifact-mcp` against the stored template — sparse, naming
+only what it holds:
+
 ```yaml
 type: instance
-name: Patient Study for Alice
-id: https://repo.metadatacenter.org/template-instances/8f785ae9-d33d-4566-a785-5f868b20bd75
-isBasedOn: https://repo.metadatacenter.org/templates/0e8f3a91-7d2c-4b6a-9e1f-5a8c2d0b4e63
+name: "Patient Study"
+isBasedOn: "https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41"
 children:
   Patient Name:
-    value: Alice
+    value: "Alice"
   Age:
     datatype: xsd:int
-    value: 30
+    value: "30"
 ```
 
-`create_instance` persists the instance to the CEDAR server — a **write** — and, like
-`create_template`, lets the server assign its `@id` (the `template-instances/…` IRI above).
+and `create_instance` writes it:
+
+```yaml
+type: instance
+name: "Patient Study"
+id: "https://repo.metadatacenter.org/template-instances/cba3c72a-ff4f-40ff-bf54-411d259d63cc"
+isBasedOn: "https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41"
+createdOn: "2026-08-18T18:49:15-07:00"
+createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
+modifiedOn: "2026-08-18T18:49:15-07:00"
+modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
+children:
+  Patient Name:
+    value: "Alice"
+  Age:
+    datatype: xsd:int
+    value: "30"
+```
+
+The server completed the instance against its template before storing it — a stored instance's JSON
+has to carry every field the template declares, and YAML cannot write an empty one — and renders it
+back sparse on the way out. A caller sees neither step.
 
 *Delete the template.*
 
-`delete_template` is **destructive and irreversible**, so the LLM confirms with the user before
-calling it, then removes the artifact by IRI.
+```
+Deleted template: https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41
+```
+
+`delete_template` is irreversible; the tool description tells the LLM to confirm with the user
+first.
 
 ## Tools
 
 Each tool is a thin wrapper over one CEDAR **resource-server** REST endpoint — `get` / `create` /
 `update` / `delete` for each of the four artifact kinds, plus server-side validation. The four
 kinds differ only by endpoint path, so the tools are generated per kind and behave identically
-within an operation; they're documented once per operation below. This MCP speaks **JSON** both
-ways (see [DESIGN.md](./DESIGN.md) Principle 3): artifact bodies go in as JSON and
-responses come back as JSON — converting to/from YAML is `cedar-artifact-mcp`'s job (`*_to_json` /
-`*_to_yaml`). A non-2xx server response is surfaced as an error result carrying the status and
-body (errors are content, never thrown).
+within an operation; they're documented once per operation below. An artifact travels in the
+serialization it was written in and comes back in the one the caller asked for (see
+[DESIGN.md](./DESIGN.md) Principle 3): YAML by default, JSON with `format: json`. A non-2xx server
+response is surfaced as an error result carrying the status and body (errors are content, never
+thrown).
 
 | Group | Tools |
 |---|---|
@@ -163,22 +175,25 @@ request path is handled for you, so pass the plain IRI. Discovery (search, folde
 ### `get_{template,element,field,instance}(id)`
 
 Fetches an artifact from the CEDAR server by its `@id` IRI (`GET /{type}/{id}`). Returns the
-artifact as CEDAR JSON; render it to compact YAML for display with `cedar-artifact-mcp`'s
-matching `*_to_yaml`.
+artifact as YAML — the exchange form, an order of magnitude smaller than CEDAR's JSON-LD and
+carrying every field, so it threads back into `update_*` unaltered. Pass `format: json` for the
+JSON-LD.
 
 ### `create_{template,element,field,instance}(artifact)`
 
 Creates a new artifact on the server (`POST /{type}`), placed in your home folder. **Writes to the
-server.** The top-level `@id` is forced to `null` on submission, so the **server** mints the
-identity and returns it in the response — the `@id` you get back is the server's, not anything you
-supplied. The body must carry a `version` and `status` (the server requires both; a body from
-`cedar-artifact-mcp`'s `*_to_json` already has them — see DESIGN.md).
+server.** Identity is stripped from the body, so the **server** mints it — the artifact's own IRI,
+its children's, and a property IRI per child — and returns the stored artifact carrying all of
+them. A YAML body needs no `version` or `status`; the server defaults them to `0.0.1` and `draft`.
+A JSON body must carry both (see DESIGN.md). A sparse instance is completed by the server, so lean
+YAML is all a caller has to write.
 
 ### `update_{template,element,field,instance}(id, artifact)`
 
 Updates an existing artifact (`PUT /{type}/{id}`). **Writes to the server.** The `id` argument and
-the body's `@id` must agree; unlike `create`, nothing is re-minted. Returns the stored artifact as
-JSON.
+the body's `@id` must agree; unlike `create`, the artifact's own identity is kept. Returns the
+stored artifact, re-read after the write — the `PUT` itself answers with the artifact's folder
+record rather than the artifact.
 
 ### `delete_{template,element,field,instance}(id)`
 
@@ -188,8 +203,8 @@ confirm with the user before calling. Returns a confirmation on success.
 ### `validate_artifact(artifact)`
 
 Validates an artifact against the CEDAR meta-model using the server's authoritative
-`POST /command/validate`. The kind is auto-detected from the JSON `@type`; the artifact is checked
-exactly as received. Returns the server's report — `{"validates": true|false, "warnings": [...],
+`POST /command/validate`. The kind is read from the YAML `type:` discriminator or the JSON
+`@type`, and the artifact is checked as written. Returns the server's report — `{"validates": true|false, "warnings": [...],
 "errors": [...]}`. Read-only: nothing is created. Complements `cedar-artifact-mcp`'s client-side
 `validate_*` — this is the server's authoritative verdict.
 

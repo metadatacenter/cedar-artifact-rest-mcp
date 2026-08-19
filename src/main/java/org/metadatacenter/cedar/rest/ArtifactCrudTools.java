@@ -1,6 +1,5 @@
 package org.metadatacenter.cedar.rest;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 
@@ -18,13 +17,12 @@ import java.util.function.BiFunction;
  * so the tools are generated rather than written out as 16 near-identical classes; the server
  * registers them in a loop.
  *
- * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. Artifact bodies are supplied
- * as YAML (the compact exchange form); JSON is also accepted on input. YAML is converted to
- * JSON via {@code cedar-artifact-library} before it's sent (the server now accepts YAML too).
- * Responses are rendered back to YAML by default, or as JSON when the caller
- * passes {@code format: json}. {@code create}
- * nulls the top-level {@code @id} so the server assigns one. Non-2xx responses surface the server's
- * status and body as an error result (errors are content).
+ * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. An artifact travels in the
+ * serialization the caller used — YAML, the compact exchange form, unless the caller passes JSON —
+ * and comes back in the one the caller asked for, YAML by default. The server reads and writes
+ * both, so neither direction is transcoded here. {@code create} strips the identifier the artifact
+ * arrived with, since the server mints it. Non-2xx responses surface the server's status and body
+ * as an error result (errors are content).
  */
 final class ArtifactCrudTools
 {
@@ -75,11 +73,11 @@ final class ArtifactCrudTools
             return error("id is required (the artifact's @id IRI)");
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("GET", idPath(type, id), null);
+            response = http.request("GET", idPath(type, id), null, null, wanted(args));
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(type, response, !wantsJson(args), null);
+          return response.isSuccess() ? success(response.body()) : serverError(response);
         };
 
     return new RegisteredTool(tool, handler);
@@ -98,10 +96,11 @@ final class ArtifactCrudTools
         .title("Create a CEDAR " + type.noun + " on the server")
         .description(
             "Creates a new CEDAR " + type.noun + " on the CEDAR server (it is placed in your home "
-                + "folder). The artifact's top-level @id is set to null on submission; the server "
-                + "assigns the real @id and returns the created artifact as YAML (the compact "
-                + "exchange form), or as JSON only if you pass format: json. WRITES to "
-                + "the server. Supply the artifact inline as YAML (the compact form "
+                + "folder). Do not supply an identifier: the server mints the artifact's @id and "
+                + "every child identifier, and any id the artifact carries is dropped before it is "
+                + "sent. The created artifact comes back as YAML (the compact exchange form), or as "
+                + "JSON only if you pass format: json, carrying the identifiers the server assigned. "
+                + "WRITES to the server. Supply the artifact inline as YAML (the compact form "
                 + "cedar-artifact-mcp returns); JSON is also accepted. Pass it verbatim, "
                 + "don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
                 + instanceValueVocabulary(type))
@@ -114,24 +113,20 @@ final class ArtifactCrudTools
           String text = str(args, "artifact");
           if (text == null || text.isBlank())
             return error("artifact is required and must not be blank");
-          ObjectNode body;
+          Upload upload;
           try {
-            body = ArtifactCodec.toObjectNode(text);
+            upload = prepareUpload(text, true);
           } catch (RuntimeException e) {
-            return error("artifact could not be parsed as JSON or YAML: " + e.getMessage());
+            return error("artifact could not be read as YAML or JSON: " + e.getMessage());
           }
-          // For an instance, inflate against its template (sparse YAML omits empty fields the
-          // server requires); then null the @id so the server mints one.
-          Prepared prepared = prepareInstanceBody(type, body, http);
-          body = prepared.body();
-          ArtifactCodec.nullifyTopLevelId(body);
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("POST", "/" + type.pathSegment, ArtifactCodec.compactJson(body));
+            response = http.request("POST", "/" + type.pathSegment,
+                upload.body(), upload.format(), wanted(args));
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(type, response, !wantsJson(args), prepared.note());
+          return response.isSuccess() ? success(response.body()) : serverError(response);
         };
 
     return new RegisteredTool(tool, handler);
@@ -151,7 +146,7 @@ final class ArtifactCrudTools
         .title("Update a CEDAR " + type.noun + " on the server")
         .description(
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
-                + "@id in the artifact body must match the id argument. Returns the updated artifact "
+                + "@id in the artifact body must match the id argument. Returns the stored artifact "
                 + "as YAML (the compact exchange form), or as JSON only if you pass "
                 + "format: json. WRITES to the server. Supply the artifact inline as YAML (the "
                 + "compact form cedar-artifact-mcp returns); JSON is also accepted. Pass it "
@@ -169,26 +164,52 @@ final class ArtifactCrudTools
           String text = str(args, "artifact");
           if (text == null || text.isBlank())
             return error("artifact is required and must not be blank");
-          ObjectNode body;
+          Upload upload;
           try {
-            body = ArtifactCodec.toObjectNode(text);
+            upload = prepareUpload(text, false);
           } catch (RuntimeException e) {
-            return error("artifact could not be parsed as JSON or YAML: " + e.getMessage());
+            return error("artifact could not be read as YAML or JSON: " + e.getMessage());
           }
-          // For an instance, inflate against its template so the sparse YAML the caller passed
-          // carries every property the server's validator requires.
-          Prepared prepared = prepareInstanceBody(type, body, http);
-          body = prepared.body();
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("PUT", idPath(type, id), ArtifactCodec.compactJson(body));
+            // JSON on the way back: a successful PUT answers with the folder record of the artifact
+            // — its path, permissions and folder — not the artifact, and that record has no YAML
+            // form. The stored artifact is re-fetched below in the serialization asked for.
+            response = http.request("PUT", idPath(type, id),
+                upload.body(), upload.format(), ArtifactFormat.JSON);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return artifactResult(type, response, !wantsJson(args), prepared.note());
+          if (!response.isSuccess())
+            return serverError(response);
+          return refetch(type, id, http, wanted(args), response);
         };
 
     return new RegisteredTool(tool, handler);
+  }
+
+  /**
+   * Answer an update with the stored artifact, fetched after the write. The PUT itself answers with
+   * the folder record rather than the artifact, so returning that would make update the one tool in
+   * the surface whose result is not the artifact it just wrote. If the fetch fails the write still
+   * happened, so the folder record is returned instead, with what went wrong.
+   */
+  private static McpSchema.CallToolResult refetch(ArtifactType type, String id, CedarHttp http,
+      ArtifactFormat format, CedarHttp.CedarResponse writeResponse)
+  {
+    CedarHttp.CedarResponse fetched;
+    try {
+      fetched = http.request("GET", idPath(type, id), null, null, format);
+    } catch (RuntimeException e) {
+      return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was updated, but "
+          + "re-reading it failed (" + e.getMessage() + "), so the server's write response is "
+          + "returned in its place.");
+    }
+    if (fetched.isSuccess())
+      return success(fetched.body());
+    return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was updated, but "
+        + "re-reading it returned HTTP " + fetched.status() + ", so the server's write response is "
+        + "returned in its place.");
   }
 
   // ---------------------------------------------------------------- delete
@@ -216,13 +237,13 @@ final class ArtifactCrudTools
             return error("id is required (the artifact's @id IRI)");
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("DELETE", idPath(type, id), null);
+            response = http.request("DELETE", idPath(type, id), null, null, ArtifactFormat.JSON);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
           if (response.isSuccess())
             return success("Deleted " + type.noun + ": " + id);
-          return error("CEDAR returned HTTP " + response.status() + ": " + response.body());
+          return serverError(response);
         };
 
     return new RegisteredTool(tool, handler);
@@ -230,95 +251,39 @@ final class ArtifactCrudTools
 
   // ---------------------------------------------------------------- helpers
 
-  /** An upload body prepared for the server, plus an optional note about a degraded preparation. */
-  private record Prepared(ObjectNode body, String note) {}
+  /** A body ready for the server and the serialization it is written in. */
+  record Upload(String body, ArtifactFormat format) {}
 
   /**
-   * Prepare an instance body for upload by inflating it against its template — the server's
-   * validator requires every template property present, but a YAML-sourced instance is sparse.
-   * The template is fetched from the server by the instance's {@code schema:isBasedOn}. Best-effort:
-   * if there is no {@code schema:isBasedOn}, the template can't be fetched, or inflation fails, the
-   * body is returned unchanged with a note explaining the skip — so an unreachable template never
-   * blocks the upload outright (worst case is the server's own rejection, now with context).
-   * A non-instance body is returned untouched.
+   * Prepare an artifact for a write: it is sent exactly as the caller wrote it, less the identity on
+   * a create. Nothing else is done to it, an instance included — a sparse one is completed by the
+   * server, against the template its {@code isBasedOn} names.
    */
-  private static Prepared prepareInstanceBody(ArtifactType type, ObjectNode body, CedarHttp http)
+  static Upload prepareUpload(String text, boolean forCreate)
   {
-    if (type != ArtifactType.INSTANCE)
-      return new Prepared(body, null);
-
-    String templateIri = ArtifactCodec.isBasedOn(body);
-    if (templateIri == null || templateIri.isBlank())
-      return new Prepared(body, "the instance has no schema:isBasedOn, so its template could not be "
-          + "located to materialize empty fields; uploaded as-is");
-
-    CedarHttp.CedarResponse templateResponse;
-    try {
-      templateResponse = http.request("GET", idPath(ArtifactType.TEMPLATE, templateIri), null);
-    } catch (RuntimeException e) {
-      return new Prepared(body, "could not fetch the template " + templateIri + " to materialize "
-          + "empty fields (" + e.getMessage() + "); uploaded as-is");
-    }
-    if (!templateResponse.isSuccess())
-      return new Prepared(body, "could not fetch the template " + templateIri + " (server returned "
-          + templateResponse.status() + ") to materialize empty fields; uploaded as-is");
-
-    try {
-      ObjectNode templateJson = ArtifactCodec.asObjectNode(templateResponse.body());
-      return new Prepared(ArtifactCodec.inflateInstance(templateJson, body), null);
-    } catch (RuntimeException e) {
-      return new Prepared(body, "could not inflate the instance against template " + templateIri
-          + " (" + e.getMessage() + "); uploaded as-is");
-    }
+    return new Upload(forCreate ? ArtifactCodec.askServerToMintIdentifier(text) : text,
+        ArtifactCodec.formatOf(text));
   }
 
-  /**
-   * Return the server's artifact, rendered as YAML (the compact exchange form) by default or as
-   * pretty JSON when {@code asYaml} is false; a non-2xx is surfaced as an error result. A non-null
-   * {@code note} (e.g. "the template couldn't be fetched to materialize empty fields") is appended
-   * to an error so the caller learns why a degraded upload may have been rejected; a success result
-   * is returned verbatim so the YAML can thread onward unaltered.
-   */
-  private static McpSchema.CallToolResult artifactResult(
-      ArtifactType type, CedarHttp.CedarResponse response, boolean asYaml, String note)
+  /** A non-2xx as an error result carrying the server's status and body. */
+  private static McpSchema.CallToolResult serverError(CedarHttp.CedarResponse response)
   {
-    if (!response.isSuccess()) {
-      String base = "CEDAR returned HTTP " + response.status() + ": " + response.body();
-      return error(note == null ? base : base + "\n\nNote: " + note);
-    }
-    ObjectNode node;
-    try {
-      node = ArtifactCodec.asObjectNode(response.body());
-    } catch (RuntimeException e) {
-      // 2xx but a body we can't parse as a JSON object — hand back the raw bytes so the caller
-      // still sees what came over the wire.
-      return success(response.body());
-    }
-    if (asYaml) {
-      try {
-        return success(ArtifactCodec.toYaml(type, node));
-      } catch (RuntimeException e) {
-        // The body parsed as JSON but the model reader / YAML renderer balked (an unusual or
-        // partial artifact). Fall back to JSON so the fetch still returns something usable.
-        return success(ArtifactCodec.prettyJson(node));
-      }
-    }
-    return success(ArtifactCodec.prettyJson(node));
+    return error("CEDAR returned HTTP " + response.status() + ": " + response.body());
   }
 
-  /** True only when the caller explicitly asked for JSON; absent or anything else means YAML. */
-  private static boolean wantsJson(Map<String, Object> args)
+  /** The serialization the caller asked the artifact back in; YAML unless they said json. */
+  private static ArtifactFormat wanted(Map<String, Object> args)
   {
-    return "json".equalsIgnoreCase(str(args, "format"));
+    return ArtifactFormat.fromArgument(str(args, "format"));
   }
 
   /** For instances, reassures the caller that sparse YAML is fine — empty fields get materialized. */
   private static String instanceUploadHint(ArtifactType type)
   {
     return type == ArtifactType.INSTANCE
-        ? " A sparse instance is fine — its empty fields are materialized against its template "
-            + "(fetched via the instance's schema:isBasedOn) before upload, so pass the lean YAML "
-            + "directly — no need to fill in empty fields or convert to JSON."
+        ? " A sparse instance is fine — the server completes it against the template its isBasedOn "
+            + "names, so pass the lean YAML directly. Do not fill in empty fields: YAML has no way "
+            + "to write one."
         : "";
   }
 
@@ -332,8 +297,8 @@ final class ArtifactCrudTools
   {
     return " Do not hand-author CEDAR JSON-LD. Its @context block, the @id every nested element "
         + "instance carries, and the attribute-value shape are all easy to get wrong and are not "
-        + "obvious from a template's JSON Schema. Author the compact YAML instead and let this tool "
-        + "produce the JSON.";
+        + "obvious from a template's JSON Schema. Author the compact YAML instead and let the "
+        + "server produce the JSON.";
   }
 
   /**

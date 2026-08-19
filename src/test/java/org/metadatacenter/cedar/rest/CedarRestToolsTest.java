@@ -2,77 +2,54 @@ package org.metadatacenter.cedar.rest;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
-import org.metadatacenter.artifacts.model.core.TemplateSchemaArtifact;
-import org.metadatacenter.artifacts.model.core.TextField;
-import org.metadatacenter.artifacts.model.renderer.JsonArtifactRenderer;
-
-import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests the CRUD + validate tools against a fake {@link CedarHttp} — no live CEDAR server. Covers
- * request construction (path, method, body), the create {@code @id}-null rule, IRI URL-encoding,
- * the delete confirmation, error surfacing, and validate resource-type detection.
+ * request construction (path, method, body, negotiated formats), the create identifier rule, IRI
+ * URL-encoding, the re-read after an update, the delete confirmation, error surfacing, and validate
+ * kind detection.
  */
 final class CedarRestToolsTest
 {
   private static final String TEMPLATE_TYPE_IRI = "https://schema.metadatacenter.org/core/Template";
+  private static final String TEMPLATE_IRI = "https://repo.metadatacenter.org/templates/T1";
 
-  /** Records the last request and returns a canned response. */
-  static final class FakeHttp implements CedarHttp
+  /** One request the fake transport saw. */
+  record Call(String method, String path, String body, ArtifactFormat bodyFormat, ArtifactFormat accept) {}
+
+  /** Records every request and returns a canned response to each. */
+  static class FakeHttp implements CedarHttp
   {
-    final int status;
-    final String responseBody;
-    String method, path, body;
+    final List<Call> calls = new ArrayList<>();
+    private final int status;
+    private final String responseBody;
 
     FakeHttp(int status, String responseBody) { this.status = status; this.responseBody = responseBody; }
 
-    @Override public CedarResponse request(String method, String pathAndQuery, String jsonBody)
+    @Override public CedarResponse request(String method, String pathAndQuery, String body,
+        ArtifactFormat bodyFormat, ArtifactFormat accept)
     {
-      this.method = method;
-      this.path = pathAndQuery;
-      this.body = jsonBody;
+      calls.add(new Call(method, pathAndQuery, body, bodyFormat, accept));
+      return respond(method, pathAndQuery);
+    }
+
+    CedarResponse respond(String method, String pathAndQuery)
+    {
       return new CedarResponse(status, responseBody);
     }
-  }
 
-  /**
-   * Answers a template on the {@code GET /templates/...} (the schema:isBasedOn lookup) and a
-   * separate canned response on the write; records the write method/path/body. A null
-   * {@code templateJson} makes the template fetch 404, exercising the unreachable-template path.
-   */
-  static final class RoutingHttp implements CedarHttp
-  {
-    private final String templateJson;
-    private final int writeStatus;
-    private final String writeBody;
-    String writeMethod, writePath, sentBody;
-    boolean templateFetched;
+    Call last() { return calls.get(calls.size() - 1); }
 
-    RoutingHttp(String templateJson, int writeStatus, String writeBody)
-    {
-      this.templateJson = templateJson;
-      this.writeStatus = writeStatus;
-      this.writeBody = writeBody;
-    }
-
-    @Override public CedarResponse request(String method, String pathAndQuery, String jsonBody)
-    {
-      if (method.equals("GET") && pathAndQuery.startsWith("/templates/")) {
-        templateFetched = true;
-        return templateJson == null ? new CedarResponse(404, "{}") : new CedarResponse(200, templateJson);
-      }
-      writeMethod = method;
-      writePath = pathAndQuery;
-      sentBody = jsonBody;
-      return new CedarResponse(writeStatus, writeBody);
-    }
+    Call first() { return calls.get(0); }
   }
 
   @Test void registers_sixteen_crud_tools_plus_validate()
@@ -85,68 +62,124 @@ final class CedarRestToolsTest
     assertEquals("validate_artifact", ValidateArtifactTool.create(new FakeHttp(200, "{}")).tool().name());
   }
 
-  @Test void create_nulls_top_level_id_and_posts_to_collection()
+  @Test void create_sends_the_yaml_unchanged_and_asks_for_yaml_back()
+  {
+    FakeHttp http = new FakeHttp(201, "type: template\nname: Demo\n");
+    String yaml = "type: template\nname: Demo\n";
+
+    McpSchema.CallToolResult result = invoke(http, "create_template", Map.of("artifact", yaml));
+
+    assertFalse(result.isError(), text(result));
+    assertEquals("POST", http.last().method());
+    assertEquals("/templates", http.last().path());
+    assertEquals(yaml, http.last().body(), "YAML must travel to the server unaltered");
+    assertEquals(ArtifactFormat.YAML, http.last().bodyFormat());
+    assertEquals(ArtifactFormat.YAML, http.last().accept());
+  }
+
+  @Test void create_strips_an_identifier_the_caller_supplied()
+  {
+    FakeHttp http = new FakeHttp(201, "type: template\n");
+    invoke(http, "create_template", Map.of("artifact",
+        "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n"));
+
+    assertFalse(http.last().body().contains(TEMPLATE_IRI),
+        "the server mints identifiers; a supplied one must not be sent: " + http.last().body());
+    assertTrue(http.last().body().contains("Demo"), "the rest of the artifact survives");
+  }
+
+  @Test void create_strips_the_json_ld_identifier_too()
   {
     FakeHttp http = new FakeHttp(201, "{}");
     invoke(http, "create_template", Map.of("artifact",
         "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"schema:name\":\"Demo\","
-            + "\"@id\":\"https://repo.metadatacenter.org/templates/minted-local\"}"));
+            + "\"@id\":\"" + TEMPLATE_IRI + "\"}"));
 
-    assertEquals("POST", http.method);
-    assertEquals("/templates", http.path);
-    assertTrue(http.body.contains("\"@id\":null"),
-        "create must null the top-level @id so the server assigns one; got: " + http.body);
-    assertFalse(http.body.contains("minted-local"),
-        "the caller's @id must be overwritten with null; got: " + http.body);
+    assertEquals(ArtifactFormat.JSON, http.last().bodyFormat(), "JSON in, JSON on the wire");
+    assertFalse(http.last().body().contains(TEMPLATE_IRI), "got: " + http.last().body());
+    assertTrue(http.last().body().contains("\"@id\":null"),
+        "JSON says 'mint me one' with an explicit null; got: " + http.last().body());
   }
 
-  @Test void create_accepts_yaml_and_posts_canonical_json()
+  @Test void get_returns_the_server_body_verbatim()
   {
-    FakeHttp http = new FakeHttp(201, "{}");
-    McpSchema.CallToolResult result = invoke(http, "create_template",
-        Map.of("artifact", "type: template\nname: Demo\n"));
+    String yaml = "type: template\nname: Demo\n";
+    FakeHttp http = new FakeHttp(200, yaml);
 
-    assertFalse(result.isError(), "YAML input must be accepted and converted; got: " + text(result));
-    assertEquals("POST", http.method);
-    assertEquals("/templates", http.path);
-    assertTrue(http.body.contains(TEMPLATE_TYPE_IRI),
-        "YAML must be converted to CEDAR JSON before sending; got: " + http.body);
-    assertTrue(http.body.contains("\"@id\":null"),
-        "create must still null the top-level @id; got: " + http.body);
+    McpSchema.CallToolResult result = invoke(http, "get_template", Map.of("id", TEMPLATE_IRI));
+
+    assertFalse(result.isError(), text(result));
+    assertEquals(yaml, text(result), "the server's YAML is returned as it arrived");
+    assertEquals("GET", http.last().method());
+    assertEquals(ArtifactFormat.YAML, http.last().accept());
+    assertNull(http.last().body());
   }
 
-  @Test void update_puts_to_the_id_path_with_the_body()
+  @Test void get_asks_for_json_when_the_caller_does()
   {
-    FakeHttp http = new FakeHttp(200, "{}");
-    String id = "https://repo.metadatacenter.org/templates/abc";
+    FakeHttp http = new FakeHttp(200, "{\"@id\":\"x\"}");
+    invoke(http, "get_template", Map.of("id", TEMPLATE_IRI, "format", "json"));
 
-    invoke(http, "update_template", Map.of(
-        "id", id,
-        "artifact", "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"@id\":\"" + id + "\","
-            + "\"schema:name\":\"Demo\"}"));
-
-    assertEquals("PUT", http.method);
-    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", http.path);
-    assertTrue(http.body.contains(TEMPLATE_TYPE_IRI),
-        "the artifact must be sent in the PUT body; got: " + http.body);
+    assertEquals(ArtifactFormat.JSON, http.last().accept());
   }
 
   @Test void get_url_encodes_the_iri_into_the_path()
   {
-    FakeHttp http = new FakeHttp(200, "{}");
+    FakeHttp http = new FakeHttp(200, "type: template\n");
     invoke(http, "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/abc"));
 
-    assertEquals("GET", http.method);
-    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", http.path);
+    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", http.last().path());
+  }
+
+  @Test void update_puts_the_artifact_then_returns_the_re_read_one()
+  {
+    // The PUT answers with the folder record; the tool answers with the artifact it re-reads.
+    FakeHttp http = new FakeHttp(200, "type: template\nname: Demo\n") {
+      @Override CedarResponse respond(String method, String pathAndQuery)
+      {
+        return method.equals("PUT")
+            ? new CedarResponse(200, "{\"resourceType\":\"template\",\"pathInfo\":[]}")
+            : super.respond(method, pathAndQuery);
+      }
+    };
+
+    McpSchema.CallToolResult result = invoke(http, "update_template", Map.of(
+        "id", TEMPLATE_IRI, "artifact", "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n"));
+
+    assertFalse(result.isError(), text(result));
+    assertEquals(2, http.calls.size(), "a PUT and the re-read that follows it");
+    assertEquals("PUT", http.first().method());
+    assertTrue(http.first().body().contains(TEMPLATE_IRI), "update keeps the identifier");
+    assertEquals(ArtifactFormat.JSON, http.first().accept(),
+        "the folder record a PUT answers with has no YAML form");
+    assertEquals("GET", http.last().method());
+    assertEquals(ArtifactFormat.YAML, http.last().accept());
+    assertEquals("type: template\nname: Demo\n", text(result));
+  }
+
+  @Test void update_falls_back_to_the_write_response_when_the_re_read_fails()
+  {
+    FakeHttp http = new FakeHttp(404, "{\"errorKey\":\"notFound\"}") {
+      @Override CedarResponse respond(String method, String pathAndQuery)
+      {
+        return method.equals("PUT") ? new CedarResponse(200, "{\"resourceType\":\"template\"}")
+            : super.respond(method, pathAndQuery);
+      }
+    };
+
+    McpSchema.CallToolResult result = invoke(http, "update_template", Map.of(
+        "id", TEMPLATE_IRI, "artifact", "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n"));
+
+    assertFalse(result.isError(), "the write succeeded, so the result is not an error");
+    assertTrue(text(result).contains("was updated, but re-reading it returned HTTP 404"), text(result));
   }
 
   @Test void delete_confirms_on_204()
   {
     FakeHttp http = new FakeHttp(204, "");
-    McpSchema.CallToolResult result = invoke(http, "delete_template",
-        Map.of("id", "https://repo.metadatacenter.org/templates/abc"));
+    McpSchema.CallToolResult result = invoke(http, "delete_template", Map.of("id", TEMPLATE_IRI));
 
-    assertEquals("DELETE", http.method);
+    assertEquals("DELETE", http.last().method());
     assertFalse(result.isError());
     assertTrue(text(result).contains("Deleted template"), "got: " + text(result));
   }
@@ -161,49 +194,32 @@ final class CedarRestToolsTest
         "error should carry status and server body; got: " + text(result));
   }
 
-  @Test void get_returns_yaml_by_default()
+  @Test void validate_reads_the_kind_from_the_yaml_type()
   {
-    // A full template the model reader can re-read — round-trip a compact-YAML template through
-    // the codec to JSON, hand that back as the server body, and expect YAML out.
-    String templateJson = ArtifactCodec.toObjectNode("type: template\nname: Demo\n").toString();
-
-    McpSchema.CallToolResult result = invoke(new FakeHttp(200, templateJson),
-        "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/demo"));
-
-    assertFalse(result.isError(), text(result));
-    assertTrue(text(result).contains("type: template") && text(result).contains("name: Demo"),
-        "default output should be YAML; got:\n" + text(result));
-    assertFalse(text(result).contains("\"@type\""), "default must not be JSON; got:\n" + text(result));
-  }
-
-  @Test void get_returns_pretty_json_when_format_is_json()
-  {
-    String templateJson = "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\","
-        + "\"@id\":\"https://repo.metadatacenter.org/templates/demo\",\"schema:name\":\"Demo\"}";
-
-    McpSchema.CallToolResult result = invoke(new FakeHttp(200, templateJson),
-        "get_template",
-        Map.of("id", "https://repo.metadatacenter.org/templates/demo", "format", "json"));
-
-    assertFalse(result.isError(), text(result));
-    // format: json — the @id and name survive and it pretty-prints over lines.
-    assertTrue(text(result).contains("\"@id\" : \"https://repo.metadatacenter.org/templates/demo\""),
-        "response should be pretty-printed JSON; got:\n" + text(result));
-    assertTrue(text(result).contains("\"schema:name\" : \"Demo\""), text(result));
-  }
-
-  @Test void validate_detects_resource_type_from_at_type()
-  {
-    FakeHttp http = new FakeHttp(200, "{\"validates\":true,\"warnings\":[],\"errors\":[]}");
-    String templateJson = "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"schema:name\":\"X\"}";
+    FakeHttp http = new FakeHttp(200, "{\"validates\":\"true\",\"warnings\":[],\"errors\":[]}");
+    String yaml = "type: element\nname: Address\n";
 
     McpSchema.CallToolResult result = ValidateArtifactTool.create(http).handler()
-        .apply(null, new McpSchema.CallToolRequest("validate_artifact", Map.of("artifact", templateJson)));
+        .apply(null, new McpSchema.CallToolRequest("validate_artifact", Map.of("artifact", yaml)));
 
     assertFalse(result.isError(), text(result));
-    assertEquals("POST", http.method);
-    assertEquals("/command/validate?resource_type=template", http.path);
-    assertEquals(templateJson, http.body, "JSON should be validated as-is");
+    assertEquals("/command/validate?resource_type=element", http.last().path());
+    assertEquals(yaml, http.last().body(), "the YAML is validated as written");
+    assertEquals(ArtifactFormat.YAML, http.last().bodyFormat());
+  }
+
+  @Test void validate_reads_the_kind_from_the_json_ld_type()
+  {
+    FakeHttp http = new FakeHttp(200, "{\"validates\":\"true\"}");
+    String json = "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"schema:name\":\"X\"}";
+
+    McpSchema.CallToolResult result = ValidateArtifactTool.create(http).handler()
+        .apply(null, new McpSchema.CallToolRequest("validate_artifact", Map.of("artifact", json)));
+
+    assertFalse(result.isError(), text(result));
+    assertEquals("/command/validate?resource_type=template", http.last().path());
+    assertEquals(json, http.last().body(), "JSON should be validated as-is");
+    assertEquals(ArtifactFormat.JSON, http.last().bodyFormat());
   }
 
   @Test void create_requires_artifact()
@@ -213,50 +229,26 @@ final class CedarRestToolsTest
     assertTrue(text(result).contains("artifact"));
   }
 
-  @Test void create_instance_inflates_sparse_yaml_against_its_template()
+  @Test void create_instance_sends_the_sparse_yaml_as_it_was_written()
   {
-    RoutingHttp http = new RoutingHttp(studyTemplateJson(), 201, "{}");
+    // The server completes it against its template; nothing is fetched or converted here.
+    FakeHttp http = new FakeHttp(201, "type: instance\n");
 
     McpSchema.CallToolResult result = invoke(http, "create_instance",
         Map.of("artifact", SPARSE_INSTANCE_YAML));
 
     assertFalse(result.isError(), text(result));
-    assertTrue(http.templateFetched, "the template should be fetched (via schema:isBasedOn) to inflate");
-    assertEquals("POST", http.writeMethod);
-    // The 'Notes' field the sparse instance omitted is materialized before the body is sent.
-    assertTrue(http.sentBody.contains("Notes"),
-        "the omitted field must be materialized before upload; sent: " + http.sentBody);
-    assertTrue(http.sentBody.contains("\"@id\":null"), "create must still null the top-level @id");
-  }
-
-  @Test void create_instance_uploads_as_is_with_a_note_when_template_unreachable()
-  {
-    // Template GET 404s, so inflation is skipped; the server then rejects the sparse instance.
-    RoutingHttp http = new RoutingHttp(null, 400, "{\"errorKey\":\"incomplete\"}");
-
-    McpSchema.CallToolResult result = invoke(http, "create_instance",
-        Map.of("artifact", SPARSE_INSTANCE_YAML));
-
-    assertTrue(result.isError());
-    assertTrue(text(result).contains("could not fetch the template"),
-        "a degraded upload should explain the skipped inflation; got: " + text(result));
+    assertEquals(1, http.calls.size(), "no template lookup: the write is the only call");
+    assertEquals("POST", http.last().method());
+    assertEquals("/template-instances", http.last().path());
+    assertEquals(SPARSE_INSTANCE_YAML, http.last().body(), "the YAML travels unaltered");
+    assertEquals(ArtifactFormat.YAML, http.last().bodyFormat());
   }
 
   // helpers
 
   private static final String SPARSE_INSTANCE_YAML =
-      "type: instance\nname: Study Instance\n"
-          + "isBasedOn: https://repo.metadatacenter.org/templates/T1\n";
-
-  /** A canonical one-field template, rendered to JSON the way the server would serve it. */
-  private static String studyTemplateJson()
-  {
-    TextField notes = TextField.builder().withName("Notes").build();
-    TemplateSchemaArtifact template = TemplateSchemaArtifact.builder().withName("Study")
-        .withJsonLdId(URI.create("https://repo.metadatacenter.org/templates/T1"))
-        .withFieldSchema(notes).build();
-    return new JsonArtifactRenderer().renderTemplateSchemaArtifact(template).toString();
-  }
+      "type: instance\nname: Study Instance\nisBasedOn: " + TEMPLATE_IRI + "\n";
 
   private static McpSchema.CallToolResult invoke(CedarHttp http, String toolName, Map<String, Object> args)
   {

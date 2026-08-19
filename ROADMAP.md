@@ -14,30 +14,25 @@ is out of scope, so the boundaries don't drift.
   {template, element, field, instance} (16 tools).
 - **Server-side validation**: `validate_artifact` → `POST /command/validate` (the
   authoritative meta-model validator; complements `cedar-artifact-mcp`'s client-side one).
-- **YAML or JSON on the boundary**: artifacts may be supplied as the compact YAML exchange form
-  or as JSON; YAML is read into the model and converted to JSON via `cedar-artifact-library`
-  before it is sent (the MCP speaks JSON to the server today, though the server now accepts YAML
-  too — see the YAML-straight-through item under Deferred). Fetched artifacts are returned as YAML
-  by default — an order of magnitude smaller and lossless — or as JSON when the caller passes
-  `format: json`. A sparse instance is inflated against its template (fetched by its
-  `schema:isBasedOn`) before `create` / `update`, so callers can hand over lean YAML. Because of
-  the `cedar-artifact-library` dependency (a local SNAPSHOT today), this MCP does not resolve
-  from Maven Central alone.
-- **Create `@id` handling**: `create_*` forces the top-level `@id` to JSON `null` so the
-  server assigns one; the assigned `@id` comes back in the response. `update_*` preserves
-  the `@id` (it identifies the artifact; path `{id}` and body `@id` must agree).
+- **YAML or JSON on the wire**: an artifact is sent to the server in the serialization the caller
+  wrote it in and comes back in the one they asked for — YAML by default, an order of magnitude
+  smaller than CEDAR's JSON-LD and lossless, or JSON with `format: json`. The server reads and
+  writes both, so neither direction is transcoded here — a sparse instance included, which the
+  server completes against its template. Nothing here reads an artifact into the model, so this MCP
+  carries no `cedar-artifact-library` dependency and resolves from Maven Central alone.
+- **Identity left to the server**: CEDAR mints every identifier, so `create_*` strips the one an
+  artifact arrived with — a JSON `@id` becomes `null`, a YAML `id:` key is dropped — and the
+  identifiers the server assigned come back in the response. `update_*` preserves the `@id` (it
+  identifies the artifact; path `{id}` and body `@id` must agree).
+- **Update answers with the artifact**: a successful `PUT` answers with the artifact's folder
+  record — its path, permissions and folder — rather than the artifact, so `update_*` re-reads the
+  artifact afterwards and returns that, in the serialization asked for. The folder record has no
+  YAML rendering, which is also why the write itself always asks for JSON back.
 - **Auth / config**: `CEDAR_API_KEY` (required) and `CEDAR_BASE_URL` (default the
   production resource server) via environment; `Authorization: apiKey <KEY>` header.
 
 ## Deferred (planned, not in v1)
 
-- **Normalize the `update_*` (PUT) response** — the resource server's `PUT /{type}/{id}` returns a
-  resource *wrapper* (`resourceType`, `pathInfo`, folder/permission metadata, `@context`) rather
-  than the bare artifact that `get_*` / `create_*` return. Because that wrapper isn't a parseable
-  CEDAR artifact, `update_*` falls back to returning the raw JSON wrapper instead of the clean YAML
-  the rest of the surface emits. After a successful PUT, re-fetch the artifact (a follow-up `GET`)
-  — or unwrap it from the response — and return it in the normal artifact form (YAML by default),
-  so update matches `get` / `create`. Confirmed live against staging on 2026-06-23.
 - **`folder_id` on create** — v1 creates artifacts in the caller's home folder. Add the
   optional `folder_id` query parameter (`POST /templates?folder_id=<IRI>`, etc.) so an
   artifact can be placed in a chosen folder.
@@ -46,14 +41,6 @@ is out of scope, so the boundaries don't drift.
 - **Lifecycle / versioning** — `/command/create-draft-artifact`, `/command/publish-artifact`,
   `make-artifact-open` / `make-artifact-not-open`: the draft → publish workflow. These are
   mutating and partly irreversible; revisit deliberately.
-- **YAML straight through (skip the conversion)** — the CEDAR server now accepts and returns
-  YAML, so this MCP could send the caller's YAML body unchanged and request YAML responses,
-  dropping the YAML↔JSON conversion (and the inflate-before-send) hop entirely. Today it converts
-  via `cedar-artifact-library`; going YAML-native would also shed that dependency, letting the MCP
-  resolve from Maven Central again. Verify the server's YAML content-negotiation first. This is
-  specific to rest-mcp — it does not generalize to cee-mcp, whose conversion feeds the CEE web
-  component (which consumes JSON), not the server, so cee-mcp keeps the library regardless.
-
 ## Out of scope
 
 The non-artifact REST surface, left to other tooling:
@@ -67,12 +54,32 @@ The non-artifact REST surface, left to other tooling:
   `rename-resource`, `attach-category` / `detach-category`.
 - **Index maintenance commands** (`regenerate-search-index`, `regenerate-rules-index`, …).
 
+## Findings
+
+- **The server completes a sparse instance.** An instance write was the one call still leaving here
+  as JSON: the empty fields a stored instance's JSON must carry have no YAML spelling, so they were
+  materialized here first. They are materialized on the server now, in `ArtifactYamlTranscoder`,
+  which is where the YAML becomes the JSON that needs them. Completing every instance write was
+  tried first and was wrong: it repaired documents a JSON client had deliberately broken, which the
+  artifact server's own suite caught. Omission means "empty" in YAML and "deleted" in JSON, and only
+  the serialization tells them apart.
+- **A `PUT` asking for YAML answered 500.** The resource server negotiates an artifact response by
+  re-rendering the entity when the client asked for YAML, and returns it untouched when it cannot —
+  an error, or a `PUT`'s folder record. Untouched left the media type unset, so JAX-RS picked the
+  negotiated YAML and then found no writer for a `FolderServerTemplate`. Fixed in
+  `AbstractResourceServerResource.negotiateArtifactResponse` (and the artifact server's copy) by
+  naming JSON on the pass-through. `update_*` asks for JSON on the write regardless, so it is
+  unaffected either way.
+- **A nested element instance validates again.** `cedar-artifact-mcp` recorded that a template types
+  a nested element occurrence's `@id` as a URI while the library renders `null` for one that has not
+  been saved, so a freshly built instance could not validate against its own template. It now
+  validates; the test that pinned the mismatch is an ordinary validation assertion again.
+
 ## Open questions (resolve during build)
 
-- **Nested child `@id` on create** — *resolved.* Only the top-level `@id` is nulled on POST;
-  nested element/field `@id`s are submitted exactly as the artifact carries them, which is the
-  correct behaviour (the server assigns the artifact's own identity and accepts the rest). See
-  DESIGN.md Principle 4.
+- **Nested child `@id` on create** — *resolved.* Identity is stripped from the artifact itself and
+  left on its children, which the server replaces anyway: a non-verbatim write mints a child
+  identifier and a property IRI for every child. See DESIGN.md Principle 4.
 - **Target server** — production (`resource.metadatacenter.org`) vs a local CEDAR stack (the
   `cedar-resource-server` checkout under `~/CEDAR`). Determines `CEDAR_BASE_URL` and which
   API key is valid.

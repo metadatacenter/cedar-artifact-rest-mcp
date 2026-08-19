@@ -8,8 +8,9 @@ import java.time.Duration;
 
 /**
  * Production {@link CedarHttp} over {@code java.net.http.HttpClient}. Adds the
- * {@code Authorization: apiKey <key>} header and JSON content negotiation, and turns transport
- * failures into a {@link RuntimeException} the calling tool surfaces as an error result.
+ * {@code Authorization: apiKey <key>} header and the content negotiation that selects an
+ * artifact's serialization, and turns transport failures into a {@link RuntimeException} the
+ * calling tool surfaces as an error result.
  */
 public final class DefaultCedarHttp implements CedarHttp
 {
@@ -22,20 +23,21 @@ public final class DefaultCedarHttp implements CedarHttp
     this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build();
   }
 
-  @Override public CedarResponse request(String method, String pathAndQuery, String jsonBody)
+  @Override public CedarResponse request(String method, String pathAndQuery, String body,
+      ArtifactFormat bodyFormat, ArtifactFormat accept)
   {
-    HttpRequest.BodyPublisher bodyPublisher = jsonBody == null
+    HttpRequest.BodyPublisher bodyPublisher = body == null
         ? HttpRequest.BodyPublishers.noBody()
-        : HttpRequest.BodyPublishers.ofString(jsonBody);
+        : HttpRequest.BodyPublishers.ofString(body);
 
     HttpRequest.Builder builder = HttpRequest.newBuilder()
         .uri(URI.create(config.baseUrl() + pathAndQuery))
         .timeout(Duration.ofSeconds(60))
         .header("Authorization", config.authorizationHeader())
-        .header("Accept", "application/json")
+        .header("Accept", accept.mediaType())
         .method(method, bodyPublisher);
-    if (jsonBody != null)
-      builder.header("Content-Type", "application/json");
+    if (body != null)
+      builder.header("Content-Type", bodyFormat.mediaType());
 
     try {
       HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());

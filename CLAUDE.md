@@ -19,9 +19,13 @@ After those three, the code is self-explanatory. Patterns to mirror:
 - **All network I/O goes through the `CedarHttp` seam.** Handlers never touch `HttpClient`
   directly — they call `http.request(...)`. This is what makes them unit-testable against a fake
   transport (see `CedarRestToolsTest`). Don't bypass it.
-- **YAML in, JSON on the wire, compact YAML out.** Use `ArtifactCodec` for every conversion —
-  never hand-roll JSON↔YAML. Inbound is keyed on the tool's `ArtifactType`.
-- **`create` nulls the top-level `@id`; `update` preserves it.** See DESIGN.md Principle 4.
+- **An artifact travels in the serialization it was written in.** The server reads and writes both
+  YAML and JSON, so a body goes as it came and a response is asked for in the form the caller wants.
+  Nothing is converted, a sparse instance included — the server completes that. `ArtifactCodec`
+  owns every inspection of an artifact, and nothing here reads one into the model: keep it that way,
+  or the `cedar-artifact-library` dependency comes back.
+- **`create` leaves identity to the server; `update` preserves the `@id`.** See DESIGN.md
+  Principle 4.
 - **Errors are content** (DESIGN.md Principle 5): a non-2xx response is an `isError` result
   carrying the HTTP status and server body — never a thrown protocol error.
 - **Mutating tools are flagged in their descriptions.** `delete_*` is destructive; its description
