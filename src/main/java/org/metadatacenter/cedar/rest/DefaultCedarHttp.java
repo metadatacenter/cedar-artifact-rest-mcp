@@ -26,6 +26,11 @@ public final class DefaultCedarHttp implements CedarHttp
   @Override public CedarResponse request(String method, String pathAndQuery, String body,
       ArtifactFormat bodyFormat, ArtifactFormat accept)
   {
+    if (!config.hasApiKey())
+      throw new IllegalStateException(
+          "CEDAR_API_KEY is not set. Add it to the MCP server environment, then restart the MCP "
+              + "server so it reads the new value. The ping tool works without an API key.");
+
     HttpRequest.BodyPublisher bodyPublisher = body == null
         ? HttpRequest.BodyPublishers.noBody()
         : HttpRequest.BodyPublishers.ofString(body);

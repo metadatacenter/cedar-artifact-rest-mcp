@@ -62,6 +62,21 @@ final class CedarRestToolsTest
     assertEquals("validate_artifact", ValidateArtifactTool.create(new FakeHttp(200, "{}")).tool().name());
   }
 
+  @Test void instance_create_update_and_validate_share_the_same_value_vocabulary()
+  {
+    FakeHttp http = new FakeHttp(200, "{}");
+    String create = tool(http, "create_instance").tool().description();
+    String update = tool(http, "update_instance").tool().description();
+    String validate = ValidateArtifactTool.create(http).tool().description();
+
+    for (String description : List.of(create, update, validate)) {
+      assertTrue(description.endsWith(ArtifactCrudTools.INSTANCE_VALUE_VOCABULARY), description);
+      assertTrue(description.contains("Custom Properties:\n    color:\n      value: red"), description);
+      assertFalse(description.contains("no compact-form spelling"), description);
+      assertFalse(description.contains("Omit them"), description);
+    }
+  }
+
   @Test void create_sends_the_yaml_unchanged_and_asks_for_yaml_back()
   {
     FakeHttp http = new FakeHttp(201, "type: template\nname: Demo\n");
@@ -194,6 +209,17 @@ final class CedarRestToolsTest
         "error should carry status and server body; got: " + text(result));
   }
 
+  @Test void missing_api_key_is_diagnosed_before_a_live_request()
+  {
+    CedarHttp http = new DefaultCedarHttp(new CedarConfig("http://127.0.0.1:1", ""));
+
+    McpSchema.CallToolResult result = invoke(http, "get_template", Map.of("id", TEMPLATE_IRI));
+
+    assertTrue(result.isError());
+    assertTrue(text(result).contains("CEDAR_API_KEY"), text(result));
+    assertTrue(text(result).contains("restart the MCP server"), text(result));
+  }
+
   @Test void validate_reads_the_kind_from_the_yaml_type()
   {
     FakeHttp http = new FakeHttp(200, "{\"validates\":\"true\",\"warnings\":[],\"errors\":[]}");
@@ -252,10 +278,16 @@ final class CedarRestToolsTest
 
   private static McpSchema.CallToolResult invoke(CedarHttp http, String toolName, Map<String, Object> args)
   {
-    for (ArtifactCrudTools.RegisteredTool rt : ArtifactCrudTools.all(http))
-      if (rt.tool().name().equals(toolName))
-        return rt.handler().apply(null, new McpSchema.CallToolRequest(toolName, args));
-    throw new IllegalArgumentException("no such tool: " + toolName);
+    ArtifactCrudTools.RegisteredTool tool = tool(http, toolName);
+    return tool.handler().apply(null, new McpSchema.CallToolRequest(toolName, args));
+  }
+
+  private static ArtifactCrudTools.RegisteredTool tool(CedarHttp http, String toolName)
+  {
+    return ArtifactCrudTools.all(http).stream()
+        .filter(rt -> rt.tool().name().equals(toolName))
+        .findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("no such tool: " + toolName));
   }
 
   private static String text(McpSchema.CallToolResult result)

@@ -26,6 +26,34 @@ import java.util.function.BiFunction;
  */
 final class ArtifactCrudTools
 {
+  /**
+   * The compact YAML value vocabulary shared by every tool that accepts a template instance.
+   * Keep this as one block: create, update, and validate must teach the same wire shape.
+   */
+  static final String INSTANCE_VALUE_VOCABULARY =
+      "\n\nChild values under 'children:', keyed by the template's child key:\n"
+          + "  text, textarea, email, phone   value: Bob\n"
+          + "  numeric                        datatype: xsd:int, value: 42\n"
+          + "  temporal                       datatype: xsd:date, value: 2026-05-04\n"
+          + "  radio, checkbox, list          value: Option A   (one of the field's declared literals)\n"
+          + "  controlled term, link, ext-*   id: <IRI>, label: disease   (IRI-valued, not a literal)\n"
+          + "  language-tagged literal        value: Bob, language: en\n"
+          + "  multi-instance field           a list of the above, e.g. [{value: one}, {value: two}]\n"
+          + "  element                        children: {...}; multi-instance, a list of those\n"
+          + "Two rules the template states and a generated instance must honour: a multi-instance "
+          + "field's own minItems/maxItems (they differ per field — one may demand three entries while "
+          + "its neighbour allows one), and static fields (section break, page break, rich text, image, "
+          + "video) which carry no value at all and are omitted entirely.\n"
+          + "An attribute-value field uses a top-level group alongside 'children:', named with the "
+          + "template's field key. Each entry is keyed by the user-chosen attribute name and has the "
+          + "literal field shape (value, with optional language); for example:\n"
+          + "  Custom Properties:\n"
+          + "    color:\n"
+          + "      value: red\n"
+          + "    size:\n"
+          + "      value: large\n"
+          + "Attribute values are literal-only: use value, not id.";
+
   /** A built tool paired with its handler, ready to hand to {@code McpServer...toolCall}. */
   record RegisteredTool(
       McpSchema.Tool tool,
@@ -301,32 +329,10 @@ final class ArtifactCrudTools
         + "server produce the JSON.";
   }
 
-  /**
-   * The compact YAML value vocabulary, in full, for instances. Duplicated into every tool that takes
-   * an instance rather than kept in one place: the shape question ("what does a populated field look
-   * like?") is asked at the moment of authoring, and a caller reading create_instance cannot be
-   * expected to have read a rendering tool's description first.
-   */
+  /** Append the shared instance vocabulary only to tools that take an instance artifact. */
   private static String instanceValueVocabulary(ArtifactType type)
   {
-    if (type != ArtifactType.INSTANCE)
-      return "";
-    return "\n\nChild values under 'children:', keyed by the template's child key:\n"
-        + "  text, textarea, email, phone   value: Bob\n"
-        + "  numeric                        datatype: xsd:int, value: 42\n"
-        + "  temporal                       datatype: xsd:date, value: 2026-05-04\n"
-        + "  radio, checkbox, list          value: Option A   (one of the field's declared literals)\n"
-        + "  controlled term, link, ext-*   id: <IRI>, label: disease   (IRI-valued, not a literal)\n"
-        + "  language-tagged literal        value: Bob, language: en\n"
-        + "  multi-instance field           a list of the above, e.g. [{value: one}, {value: two}]\n"
-        + "  element                        children: {...}; multi-instance, a list of those\n"
-        + "Two rules the template states and a generated instance must honour: a multi-instance "
-        + "field's own minItems/maxItems (they differ per field — one may demand three entries while "
-        + "its neighbour allows one), and static fields (section break, page break, rich text, image, "
-        + "video) which carry no value at all and are omitted entirely.\n"
-        + "Attribute-value fields have no compact-form spelling today: the JSON form expects an array "
-        + "of attribute *names* with each value as a sibling property. Omit them — they are optional — "
-        + "rather than guessing a shape that will be rejected.";
+    return type == ArtifactType.INSTANCE ? INSTANCE_VALUE_VOCABULARY : "";
   }
 
   private static Map<String, Object> idProperty(ArtifactType type)

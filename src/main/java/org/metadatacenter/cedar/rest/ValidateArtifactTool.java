@@ -43,18 +43,7 @@ final class ValidateArtifactTool
                 + " Do not hand-author CEDAR JSON-LD to validate it. Its @context block, the @id "
                 + "every nested element instance carries, and the attribute-value shape are easy to "
                 + "get wrong and are not obvious from a template's JSON Schema; author compact YAML."
-                + "\n\nInstance child values under 'children:', keyed by the template's child key:\n"
-                + "  text, textarea, email, phone   value: Bob\n"
-                + "  numeric                        datatype: xsd:int, value: 42\n"
-                + "  temporal                       datatype: xsd:date, value: 2026-05-04\n"
-                + "  radio, checkbox, list          value: Option A   (one of the declared literals)\n"
-                + "  controlled term, link, ext-*   id: <IRI>, label: disease   (IRI-valued)\n"
-                + "  multi-instance field           a list of the above, honouring the field's own "
-                + "minItems/maxItems\n"
-                + "  element                        children: {...}; multi-instance, a list of those\n"
-                + "Static fields (section break, page break, rich text, image, video) carry no value "
-                + "and are omitted. Attribute-value fields have no compact-form spelling today — omit "
-                + "them rather than guessing.")
+                + ArtifactCrudTools.INSTANCE_VALUE_VOCABULARY)
         .inputSchema(new McpSchema.JsonSchema("object", properties, List.of("artifact"),
             Boolean.FALSE, null, null))
         .build();
