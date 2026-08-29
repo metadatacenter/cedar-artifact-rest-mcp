@@ -220,7 +220,7 @@ Set in the MCP client's config (e.g. `~/.claude.json`), never in source or chat:
 ```json
 "cedar-artifact-rest": {
   "command": "/usr/bin/java",
-  "args": ["-jar", "/path/to/cedar-artifact-rest-mcp/target/cedar-artifact-rest-mcp-0.1.0-SNAPSHOT-all.jar"],
+  "args": ["-jar", "/path/to/cedar-artifact-rest-mcp/target/cedar-artifact-rest-mcp.jar"],
   "env": {
     "CEDAR_API_KEY": "apiKey <your-key>",
     "CEDAR_BASE_URL": "https://resource.metadatacenter.org"
@@ -235,7 +235,7 @@ Set in the MCP client's config (e.g. `~/.claude.json`), never in source or chat:
 ## Build
 
 ```bash
-mvn package          # builds target/cedar-artifact-rest-mcp-0.1.0-SNAPSHOT-all.jar (shaded, executable)
+mvn package          # builds the shaded jar and its stable target/cedar-artifact-rest-mcp.jar copy
 mvn test             # unit tests (run against a fake HTTP transport; no live server needed)
 mvn verify           # + integration tests, but the live ones are excluded by default
 ```
