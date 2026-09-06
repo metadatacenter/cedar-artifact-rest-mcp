@@ -88,6 +88,23 @@ final class ArtifactCodec
       node.putNull(JSON_LD_ID);
       return compactJson(node);
     }
+    return withoutYamlIdentifier(text);
+  }
+
+  /**
+   * The same document with its YAML identifier removed; JSON, and a document naming nothing, travel
+   * unchanged.
+   *
+   * <p>A PUT names the artifact in its path, so the body's id only repeats it. That repetition is
+   * also in the way: CEDAR refuses a YAML body carrying an id without the system-recorded keys
+   * beside it, and that is exactly the compact form every read on this surface returns. The same
+   * body without the id is the minimal form, which CEDAR accepts. JSON is not read through that
+   * rule and is left alone.
+   */
+  static String withoutYamlIdentifier(String text)
+  {
+    if (looksLikeJson(text))
+      return text;
     LinkedHashMap<String, Object> map = parseYamlMap(text);
     if (!map.containsKey(YAML_ID))
       return text;

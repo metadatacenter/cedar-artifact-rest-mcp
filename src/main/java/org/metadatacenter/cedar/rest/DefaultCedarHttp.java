@@ -9,8 +9,9 @@ import java.time.Duration;
 /**
  * Production {@link CedarHttp} over {@code java.net.http.HttpClient}. Adds the
  * {@code Authorization: apiKey <key>} header and the content negotiation that selects an
- * artifact's serialization, and turns transport failures into a {@link RuntimeException} the
- * calling tool surfaces as an error result.
+ * artifact's serialization, carries the {@code If-Match} a write needs and the {@code ETag} a
+ * read returns, and turns transport failures into a {@link RuntimeException} the calling tool
+ * surfaces as an error result.
  */
 public final class DefaultCedarHttp implements CedarHttp
 {
@@ -24,7 +25,7 @@ public final class DefaultCedarHttp implements CedarHttp
   }
 
   @Override public CedarResponse request(String method, String pathAndQuery, String body,
-      ArtifactFormat bodyFormat, ArtifactFormat accept)
+      ArtifactFormat bodyFormat, ArtifactFormat accept, String ifMatch)
   {
     if (!config.hasApiKey())
       throw new IllegalStateException(
@@ -43,10 +44,13 @@ public final class DefaultCedarHttp implements CedarHttp
         .method(method, bodyPublisher);
     if (body != null)
       builder.header("Content-Type", bodyFormat.mediaType());
+    if (ifMatch != null && !ifMatch.isBlank())
+      builder.header("If-Match", ifMatch);
 
     try {
       HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-      return new CedarResponse(response.statusCode(), response.body());
+      return new CedarResponse(response.statusCode(), response.body(),
+          response.headers().firstValue("ETag").orElse(null));
     } catch (Exception e) {
       throw new RuntimeException(
           "HTTP " + method + " " + pathAndQuery + " to CEDAR failed: " + e.getMessage(), e);

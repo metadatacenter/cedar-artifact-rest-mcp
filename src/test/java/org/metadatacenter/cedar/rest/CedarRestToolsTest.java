@@ -22,9 +22,14 @@ final class CedarRestToolsTest
 {
   private static final String TEMPLATE_TYPE_IRI = "https://schema.metadatacenter.org/core/Template";
   private static final String TEMPLATE_IRI = "https://repo.metadatacenter.org/templates/T1";
+  private static final String OTHER_IRI = "https://repo.metadatacenter.org/templates/T2";
 
   /** One request the fake transport saw. */
-  record Call(String method, String path, String body, ArtifactFormat bodyFormat, ArtifactFormat accept) {}
+  record Call(String method, String path, String body, ArtifactFormat bodyFormat, ArtifactFormat accept,
+      String ifMatch) {}
+
+  /** The entity tag every fake read hands back, for a write to assert against. */
+  static final String ETAG = "\"7-yaml-compact\"";
 
   /** Records every request and returns a canned response to each. */
   static class FakeHttp implements CedarHttp
@@ -36,15 +41,21 @@ final class CedarRestToolsTest
     FakeHttp(int status, String responseBody) { this.status = status; this.responseBody = responseBody; }
 
     @Override public CedarResponse request(String method, String pathAndQuery, String body,
-        ArtifactFormat bodyFormat, ArtifactFormat accept)
+        ArtifactFormat bodyFormat, ArtifactFormat accept, String ifMatch)
     {
-      calls.add(new Call(method, pathAndQuery, body, bodyFormat, accept));
+      calls.add(new Call(method, pathAndQuery, body, bodyFormat, accept, ifMatch));
       return respond(method, pathAndQuery);
     }
 
     CedarResponse respond(String method, String pathAndQuery)
     {
-      return new CedarResponse(status, responseBody);
+      return new CedarResponse(status, responseBody, ETAG);
+    }
+
+    /** The write in a sequence that also reads for the precondition. */
+    Call write()
+    {
+      return calls.stream().filter(c -> !c.method().equals("GET")).findFirst().orElseThrow();
     }
 
     Call last() { return calls.get(calls.size() - 1); }
@@ -240,23 +251,71 @@ final class CedarRestToolsTest
         "id", TEMPLATE_IRI, "artifact", "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n"));
 
     assertFalse(result.isError(), text(result));
-    assertEquals(2, http.calls.size(), "a PUT and the re-read that follows it");
-    assertEquals("PUT", http.first().method());
-    assertTrue(http.first().body().contains(TEMPLATE_IRI), "update keeps the identifier");
-    assertEquals(ArtifactFormat.JSON, http.first().accept(),
+    assertEquals(3, http.calls.size(), "a read for the precondition, the PUT, and the re-read");
+    assertEquals("GET", http.first().method(), "the tag a write asserts against comes from a read");
+
+    Call put = http.write();
+    assertEquals("PUT", put.method());
+    assertEquals(ETAG, put.ifMatch(), "CEDAR answers 428 to an update that asserts no revision");
+    assertFalse(put.body().contains(TEMPLATE_IRI),
+        "the path names the artifact; an id in the body would make it the form CEDAR refuses to store");
+    assertEquals(ArtifactFormat.JSON, put.accept(),
         "the folder record a PUT answers with has no YAML form");
+
     assertEquals("GET", http.last().method());
     assertEquals(ArtifactFormat.YAML, http.last().accept());
     assertEquals("type: template\nname: Demo\n", text(result));
   }
 
+  @Test void delete_asserts_the_revision_its_read_reported()
+  {
+    FakeHttp http = new FakeHttp(204, "");
+
+    invoke(http, "delete_template", Map.of("id", TEMPLATE_IRI));
+
+    assertEquals("GET", http.first().method(), "a delete reads first, for the tag");
+    assertEquals("DELETE", http.last().method());
+    assertEquals(ETAG, http.last().ifMatch(), "CEDAR answers 428 to a delete that asserts no revision");
+  }
+
+  @Test void update_refuses_a_body_naming_a_different_artifact()
+  {
+    FakeHttp http = new FakeHttp(200, "type: template\n");
+
+    McpSchema.CallToolResult result = invoke(http, "update_template", Map.of(
+        "id", TEMPLATE_IRI, "artifact", "type: template\nname: Demo\nid: " + OTHER_IRI + "\n"));
+
+    assertTrue(result.isError());
+    // The id is dropped before the body is sent, so nothing downstream could catch this.
+    assertEquals(0, http.calls.size(), "a mismatch is refused before anything reaches the server");
+    assertTrue(text(result).contains(OTHER_IRI), text(result));
+  }
+
+  @Test void update_surfaces_a_failed_precondition_read_rather_than_writing()
+  {
+    FakeHttp http = new FakeHttp(404, "{\"errorKey\":\"notFound\"}");
+
+    McpSchema.CallToolResult result = invoke(http, "update_template", Map.of(
+        "id", TEMPLATE_IRI, "artifact", "type: template\nname: Demo\n"));
+
+    assertTrue(result.isError());
+    assertEquals(1, http.calls.size(), "the read failed, so no write was attempted");
+    assertEquals("GET", http.last().method());
+  }
+
   @Test void update_falls_back_to_the_write_response_when_the_re_read_fails()
   {
-    FakeHttp http = new FakeHttp(404, "{\"errorKey\":\"notFound\"}") {
+    FakeHttp http = new FakeHttp(200, "type: template\nname: Demo\n") {
+      private int gets = 0;
+
       @Override CedarResponse respond(String method, String pathAndQuery)
       {
-        return method.equals("PUT") ? new CedarResponse(200, "{\"resourceType\":\"template\"}")
-            : super.respond(method, pathAndQuery);
+        if (method.equals("PUT"))
+          return new CedarResponse(200, "{\"resourceType\":\"template\"}");
+        // The first read supplies the precondition and succeeds. The re-read after the write is the
+        // one that fails, which is the case this covers.
+        return ++gets == 1 ? super.respond(method, pathAndQuery)
+            : new CedarResponse(404, "{\"errorKey\":\"notFound\"}");
       }
     };
 

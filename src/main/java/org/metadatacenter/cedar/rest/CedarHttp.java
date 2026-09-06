@@ -17,14 +17,36 @@ public interface CedarHttp
    * @param bodyFormat   the serialization {@code body} is written in, naming its {@code Content-Type};
    *                     ignored when there is no body
    * @param accept       the serialization to ask for in the response
-   * @return the status and body of the response
+   * @param ifMatch      the entity tag a write asserts it is replacing, sent as {@code If-Match}, or
+   *                     {@code null} to assert nothing. CEDAR requires one to update or delete an
+   *                     artifact, and answers 428 without it.
+   * @return the status, body and entity tag of the response
    */
   CedarResponse request(String method, String pathAndQuery, String body,
-      ArtifactFormat bodyFormat, ArtifactFormat accept);
+      ArtifactFormat bodyFormat, ArtifactFormat accept, String ifMatch);
 
-  /** Status and (string) body of a resource-server response. */
-  record CedarResponse(int status, String body)
+  /** A request that asserts nothing about the artifact's revision, which is every read. */
+  default CedarResponse request(String method, String pathAndQuery, String body,
+      ArtifactFormat bodyFormat, ArtifactFormat accept)
   {
+    return request(method, pathAndQuery, body, bodyFormat, accept, null);
+  }
+
+  /**
+   * Status, body and entity tag of a resource-server response.
+   *
+   * <p>The tag is what a later write sends back as {@code If-Match}. CEDAR issues a different one per
+   * representation — {@code "3"} for JSON, {@code "3-yaml"}, {@code "3-yaml-compact"} — and reads the
+   * revision out of whichever it is given, so the tag from any read satisfies the precondition.
+   */
+  record CedarResponse(int status, String body, String etag)
+  {
+    /** A response whose entity tag is unknown or absent, which is what a fake transport supplies. */
+    public CedarResponse(int status, String body)
+    {
+      this(status, body, null);
+    }
+
     public boolean isSuccess() { return status >= 200 && status < 300; }
   }
 }

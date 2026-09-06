@@ -196,17 +196,29 @@ final class ArtifactCrudTools
             return error("artifact is required and must not be blank");
           Upload upload;
           try {
+            // The identifier goes before the body is sent, so a body naming a different artifact
+            // would otherwise be written silently over the one the path names. Checked while it is
+            // still there, and only when the caller supplied one — a body naming nothing is being
+            // authored against the path, which is the minimal form.
+            String named = ArtifactCodec.identifierOf(text);
+            if (named != null && !named.equals(id))
+              return error("the artifact names " + named + ", which is not the " + type.noun
+                  + " being updated (" + id + "). Pass the artifact this id identifies, or drop the "
+                  + "id from the body to write it against the id argument.");
             upload = prepareUpload(text, false);
           } catch (RuntimeException e) {
             return error("artifact could not be read as YAML or JSON: " + e.getMessage());
           }
           CedarHttp.CedarResponse response;
           try {
+            CedarHttp.CedarResponse current = readForPrecondition(type, id, http);
+            if (!current.isSuccess())
+              return serverError(current);
             // JSON on the way back: a successful PUT answers with the folder record of the artifact
             // — its path, permissions and folder — not the artifact, and that record has no YAML
             // form. The stored artifact is re-fetched below in the serialization asked for.
             response = http.request("PUT", idPath(type, id),
-                upload.body(), upload.format(), ArtifactFormat.JSON);
+                upload.body(), upload.format(), ArtifactFormat.JSON, current.etag());
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
@@ -305,7 +317,11 @@ final class ArtifactCrudTools
             return error("id is required (the artifact's @id IRI)");
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("DELETE", idPath(type, id), null, null, ArtifactFormat.JSON);
+            CedarHttp.CedarResponse current = readForPrecondition(type, id, http);
+            if (!current.isSuccess())
+              return serverError(current);
+            response = http.request("DELETE", idPath(type, id), null, null, ArtifactFormat.JSON,
+                current.etag());
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
@@ -323,13 +339,19 @@ final class ArtifactCrudTools
   record Upload(String body, ArtifactFormat format) {}
 
   /**
-   * Prepare an artifact for a write: it is sent exactly as the caller wrote it, less the identity on
-   * a create. Nothing else is done to it, an instance included — a sparse one is completed by the
-   * server, against the template its {@code isBasedOn} names.
+   * Prepare an artifact for a write: it is sent as the caller wrote it, less its identity. Nothing
+   * else is done to it, an instance included — a sparse one is completed by the server, against the
+   * template its {@code isBasedOn} names.
+   *
+   * <p>Both writes drop the identifier, for different reasons. A create asks the server to mint one,
+   * which JSON says with an explicit null. An update names the artifact in its path, and a YAML body
+   * that repeats the id without the system-recorded keys is the compact form, which CEDAR refuses to
+   * store; without it the same body is the minimal form.
    */
   static Upload prepareUpload(String text, boolean forCreate)
   {
-    return new Upload(forCreate ? ArtifactCodec.askServerToMintIdentifier(text) : text,
+    return new Upload(
+        forCreate ? ArtifactCodec.askServerToMintIdentifier(text) : ArtifactCodec.withoutYamlIdentifier(text),
         ArtifactCodec.formatOf(text));
   }
 
@@ -423,6 +445,19 @@ final class ArtifactCrudTools
   private static McpSchema.JsonSchema schema(Map<String, Object> properties, List<String> required)
   {
     return new McpSchema.JsonSchema("object", properties, required, Boolean.FALSE, null, null);
+  }
+
+  /**
+   * Read an artifact for the entity tag a write must assert against.
+   *
+   * <p>CEDAR answers 428 to an update or a delete that carries no {@code If-Match}, so a write costs
+   * a read first. The compact YAML form is read because it is the smallest of the three, and the
+   * body is discarded: CEDAR reads the revision out of whichever representation's tag it is given,
+   * so {@code "3-yaml-compact"} asserts revision 3 exactly as {@code "3"} does.
+   */
+  private static CedarHttp.CedarResponse readForPrecondition(ArtifactType type, String id, CedarHttp http)
+  {
+    return http.request("GET", readPath(type, id, ArtifactFormat.YAML), null, null, ArtifactFormat.YAML);
   }
 
   private static String idPath(ArtifactType type, String id)
