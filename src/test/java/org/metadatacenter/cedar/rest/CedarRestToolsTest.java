@@ -226,6 +226,25 @@ final class CedarRestToolsTest
         "a YAML read must name the compact representation, else CEDAR serves the expanded one");
   }
 
+  @Test void get_asks_for_the_full_form_when_told_not_to_compact()
+  {
+    FakeHttp http = new FakeHttp(200, "type: template\n");
+
+    invoke(http, "get_template", Map.of("id", TEMPLATE_IRI, "compact", false));
+
+    assertFalse(http.last().path().contains("compact"),
+        "CEDAR serves the compact form unless a read declines it, and an update needs the full one");
+  }
+
+  @Test void get_compacts_unless_the_caller_says_otherwise()
+  {
+    FakeHttp http = new FakeHttp(200, "type: template\n");
+
+    invoke(http, "get_template", Map.of("id", TEMPLATE_IRI, "compact", true));
+
+    assertTrue(http.last().path().endsWith("?compact=true"));
+  }
+
   @Test void get_leaves_compact_off_when_it_asks_for_json()
   {
     FakeHttp http = new FakeHttp(200, "{\"@id\":\"x\"}");
@@ -257,8 +276,8 @@ final class CedarRestToolsTest
     Call put = http.write();
     assertEquals("PUT", put.method());
     assertEquals(ETAG, put.ifMatch(), "CEDAR answers 428 to an update that asserts no revision");
-    assertFalse(put.body().contains(TEMPLATE_IRI),
-        "the path names the artifact; an id in the body would make it the form CEDAR refuses to store");
+    assertTrue(put.body().contains(TEMPLATE_IRI),
+        "the artifact server refuses a PUT whose body carries no @id, so the identity is kept");
     assertEquals(ArtifactFormat.JSON, put.accept(),
         "the folder record a PUT answers with has no YAML form");
 

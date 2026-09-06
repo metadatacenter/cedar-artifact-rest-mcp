@@ -80,6 +80,7 @@ final class ArtifactCrudTools
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("id", idProperty(type));
     properties.put("format", formatProperty());
+    properties.put("compact", compactProperty());
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
         .name("get_" + type.noun)
@@ -87,7 +88,8 @@ final class ArtifactCrudTools
         .description(
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
                 + "artifact as YAML (the compact exchange form — an order of magnitude smaller than "
-                + "JSON and lossless), or as JSON only if you pass format: json. "
+                + "JSON and lossless), or as JSON only if you pass format: json. Pass "
+                + "compact: false for the full form, which is the one an update must be given back. "
                 + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize."
                 + authoringPointer(type))
         .inputSchema(schema(properties, List.of("id")))
@@ -100,9 +102,10 @@ final class ArtifactCrudTools
           if (id == null || id.isBlank())
             return error("id is required (the artifact's @id IRI)");
           ArtifactFormat accept = wanted(args);
+          boolean compact = compactWanted(args);
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("GET", readPath(type, id, accept), null, null, accept);
+            response = http.request("GET", readPath(type, id, accept, compact), null, null, accept);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
@@ -178,8 +181,11 @@ final class ArtifactCrudTools
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
                 + "@id in the artifact body must match the id argument. Returns the stored artifact "
                 + "as YAML (the compact exchange form), or as JSON only if you pass "
-                + "format: json. WRITES to the server. Supply the artifact inline as YAML (the "
-                + "compact form cedar-artifact-mcp returns); JSON is also accepted. Pass it "
+                + "format: json. WRITES to the server. The body must be the FULL YAML form, which "
+                + "carries the id alongside the version, status, model version and provenance: fetch "
+                + "it with get_" + type.noun + " and compact: false, edit that, and pass it back. The "
+                + "compact form is refused, because CEDAR will not store a body that names an "
+                + "artifact without those keys beside it. JSON is also accepted. Pass it "
                 + "verbatim, don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
                 + instanceValueVocabulary(type))
         .inputSchema(schema(properties, List.of("id", "artifact")))
@@ -256,7 +262,7 @@ final class ArtifactCrudTools
 
     CedarHttp.CedarResponse fetched;
     try {
-      fetched = http.request("GET", readPath(type, id, accept), null, null, accept);
+      fetched = http.request("GET", readPath(type, id, accept, true), null, null, accept);
     } catch (RuntimeException e) {
       return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was created, but "
           + "re-reading it failed (" + e.getMessage() + "); the copy above is the expanded form.");
@@ -279,7 +285,7 @@ final class ArtifactCrudTools
   {
     CedarHttp.CedarResponse fetched;
     try {
-      fetched = http.request("GET", readPath(type, id, format), null, null, format);
+      fetched = http.request("GET", readPath(type, id, format, true), null, null, format);
     } catch (RuntimeException e) {
       return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was updated, but "
           + "re-reading it failed (" + e.getMessage() + "), so the server's write response is "
@@ -339,19 +345,19 @@ final class ArtifactCrudTools
   record Upload(String body, ArtifactFormat format) {}
 
   /**
-   * Prepare an artifact for a write: it is sent as the caller wrote it, less its identity. Nothing
-   * else is done to it, an instance included — a sparse one is completed by the server, against the
-   * template its {@code isBasedOn} names.
+   * Prepare an artifact for a write: it is sent exactly as the caller wrote it, less the identity on
+   * a create. Nothing else is done to it, an instance included — a sparse one is completed by the
+   * server, against the template its {@code isBasedOn} names.
    *
-   * <p>Both writes drop the identifier, for different reasons. A create asks the server to mint one,
-   * which JSON says with an explicit null. An update names the artifact in its path, and a YAML body
-   * that repeats the id without the system-recorded keys is the compact form, which CEDAR refuses to
-   * store; without it the same body is the minimal form.
+   * <p>An update keeps the identity, and must: the artifact server refuses a PUT whose body carries
+   * no {@code @id}. That is why an update needs the full form rather than the compact one — the
+   * resource server refuses a body that names an artifact without the system-recorded keys beside
+   * it, so the two rules leave only the full form to satisfy both. Read with {@code compact: false}
+   * to obtain it.
    */
   static Upload prepareUpload(String text, boolean forCreate)
   {
-    return new Upload(
-        forCreate ? ArtifactCodec.askServerToMintIdentifier(text) : ArtifactCodec.withoutYamlIdentifier(text),
+    return new Upload(forCreate ? ArtifactCodec.askServerToMintIdentifier(text) : text,
         ArtifactCodec.formatOf(text));
   }
 
@@ -431,6 +437,25 @@ final class ArtifactCrudTools
                 : ""));
   }
 
+  private static Map<String, Object> compactProperty()
+  {
+    return Map.of(
+        "type", "boolean",
+        "description",
+        "Which YAML form to return. True, the default, is the compact exchange form: lean, and what "
+            + "the rest of this surface reads and writes. False is the full form, which carries the "
+            + "id alongside the version, status, model version and provenance CEDAR records. Ask for "
+            + "false when the artifact is going to be edited and stored again: an update is refused "
+            + "unless its body is the full form. Ignored for JSON, which has one form.");
+  }
+
+  /** Whether a read wants the compact form; true unless the caller said otherwise. */
+  private static boolean compactWanted(Map<String, Object> args)
+  {
+    Object value = args.get("compact");
+    return !(value instanceof Boolean asked) || asked;
+  }
+
   private static Map<String, Object> formatProperty()
   {
     return Map.of(
@@ -457,7 +482,7 @@ final class ArtifactCrudTools
    */
   private static CedarHttp.CedarResponse readForPrecondition(ArtifactType type, String id, CedarHttp http)
   {
-    return http.request("GET", readPath(type, id, ArtifactFormat.YAML), null, null, ArtifactFormat.YAML);
+    return http.request("GET", readPath(type, id, ArtifactFormat.YAML, true), null, null, ArtifactFormat.YAML);
   }
 
   private static String idPath(ArtifactType type, String id)
@@ -472,9 +497,9 @@ final class ArtifactCrudTools
    * JSON has a single form and takes no such parameter. CEDAR rejects the parameter on a write,
    * so only reads carry it.
    */
-  private static String readPath(ArtifactType type, String id, ArtifactFormat accept)
+  private static String readPath(ArtifactType type, String id, ArtifactFormat accept, boolean compact)
   {
-    return idPath(type, id) + (accept == ArtifactFormat.YAML ? "?compact=true" : "");
+    return idPath(type, id) + (accept == ArtifactFormat.YAML && compact ? "?compact=true" : "");
   }
 
   private static Map<String, Object> args(McpSchema.CallToolRequest request)
