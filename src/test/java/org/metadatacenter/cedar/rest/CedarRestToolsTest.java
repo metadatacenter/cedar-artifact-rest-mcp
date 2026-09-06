@@ -116,6 +116,64 @@ final class CedarRestToolsTest
         "JSON says 'mint me one' with an explicit null; got: " + http.last().body());
   }
 
+  @Test void create_posts_then_returns_the_artifact_re_read_in_compact_form()
+  {
+    // The POST answers with the created artifact, but CEDAR takes no compact parameter on a write,
+    // so the tool answers with the compact copy it reads back.
+    String compact = "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n";
+    FakeHttp http = new FakeHttp(200, compact) {
+      @Override CedarResponse respond(String method, String pathAndQuery)
+      {
+        return method.equals("POST")
+            ? new CedarResponse(201, "type: template\nname: Demo\nid: " + TEMPLATE_IRI
+                + "\nstatus: draft\nmodelVersion: 1.6.0\n")
+            : super.respond(method, pathAndQuery);
+      }
+    };
+
+    McpSchema.CallToolResult result = invoke(http, "create_template",
+        Map.of("artifact", "type: template\nname: Demo\n"));
+
+    assertFalse(result.isError(), text(result));
+    assertEquals(2, http.calls.size(), "a POST and the re-read that follows it");
+    assertEquals("POST", http.first().method());
+    assertEquals("GET", http.last().method());
+    assertTrue(http.last().path().endsWith("?compact=true"),
+        "the re-read exists to get the compact form, so it must name it");
+    assertEquals(compact, text(result));
+  }
+
+  @Test void create_asking_for_json_does_not_re_read()
+  {
+    FakeHttp http = new FakeHttp(201, "{\"@id\":\"" + TEMPLATE_IRI + "\"}");
+
+    invoke(http, "create_template", Map.of(
+        "artifact", "type: template\nname: Demo\n", "format", "json"));
+
+    assertEquals(1, http.calls.size(), "JSON has one form; there is nothing to re-read for");
+    assertEquals("POST", http.last().method());
+  }
+
+  @Test void create_falls_back_to_the_write_response_when_the_re_read_fails()
+  {
+    FakeHttp http = new FakeHttp(404, "{\"errorKey\":\"notFound\"}") {
+      @Override CedarResponse respond(String method, String pathAndQuery)
+      {
+        return method.equals("POST")
+            ? new CedarResponse(201, "type: template\nname: Demo\nid: " + TEMPLATE_IRI + "\n")
+            : super.respond(method, pathAndQuery);
+      }
+    };
+
+    McpSchema.CallToolResult result = invoke(http, "create_template",
+        Map.of("artifact", "type: template\nname: Demo\n"));
+
+    assertFalse(result.isError(), "the artifact exists; a failed re-read is not a failed create");
+    assertTrue(text(result).contains(TEMPLATE_IRI), "the created artifact still comes back");
+    assertTrue(text(result).contains("expanded form"),
+        "the caller must be told which form it got: " + text(result));
+  }
+
   @Test void get_returns_the_server_body_verbatim()
   {
     String yaml = "type: template\nname: Demo\n";
@@ -143,7 +201,27 @@ final class CedarRestToolsTest
     FakeHttp http = new FakeHttp(200, "type: template\n");
     invoke(http, "get_template", Map.of("id", "https://repo.metadatacenter.org/templates/abc"));
 
-    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", http.last().path());
+    String path = http.last().path();
+    String withoutQuery = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+    assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", withoutQuery);
+  }
+
+  @Test void get_asks_for_the_compact_yaml_representation()
+  {
+    FakeHttp http = new FakeHttp(200, "type: template\n");
+    invoke(http, "get_template", Map.of("id", TEMPLATE_IRI));
+
+    assertTrue(http.last().path().endsWith("?compact=true"),
+        "a YAML read must name the compact representation, else CEDAR serves the expanded one");
+  }
+
+  @Test void get_leaves_compact_off_when_it_asks_for_json()
+  {
+    FakeHttp http = new FakeHttp(200, "{\"@id\":\"x\"}");
+    invoke(http, "get_template", Map.of("id", TEMPLATE_IRI, "format", "json"));
+
+    assertFalse(http.last().path().contains("compact"),
+        "JSON has one form and CEDAR takes no compact parameter for it");
   }
 
   @Test void update_puts_the_artifact_then_returns_the_re_read_one()

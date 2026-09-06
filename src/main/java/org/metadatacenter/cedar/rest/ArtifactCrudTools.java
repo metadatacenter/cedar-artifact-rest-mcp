@@ -99,9 +99,10 @@ final class ArtifactCrudTools
           String id = str(args, "id");
           if (id == null || id.isBlank())
             return error("id is required (the artifact's @id IRI)");
+          ArtifactFormat accept = wanted(args);
           CedarHttp.CedarResponse response;
           try {
-            response = http.request("GET", idPath(type, id), null, null, wanted(args));
+            response = http.request("GET", readPath(type, id, accept), null, null, accept);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
@@ -147,14 +148,15 @@ final class ArtifactCrudTools
           } catch (RuntimeException e) {
             return error("artifact could not be read as YAML or JSON: " + e.getMessage());
           }
+          ArtifactFormat accept = wanted(args);
           CedarHttp.CedarResponse response;
           try {
             response = http.request("POST", "/" + type.pathSegment,
-                upload.body(), upload.format(), wanted(args));
+                upload.body(), upload.format(), accept);
           } catch (RuntimeException e) {
             return error(e.getMessage());
           }
-          return response.isSuccess() ? success(response.body()) : serverError(response);
+          return response.isSuccess() ? created(type, http, accept, response) : serverError(response);
         };
 
     return new RegisteredTool(tool, handler);
@@ -217,6 +219,44 @@ final class ArtifactCrudTools
   }
 
   /**
+   * Answer a create with the stored artifact, re-read after the write. The POST already answers with
+   * the created artifact, but CEDAR takes no compact parameter on a write, so that copy is the
+   * expanded one; a second read is the only way a create can answer in the form the rest of this
+   * surface exchanges. JSON has a single form and travels back as it arrived. Where the re-read
+   * cannot happen the artifact still exists, so the POST's own copy is answered with instead, saying
+   * why it is the expanded form.
+   */
+  private static McpSchema.CallToolResult created(ArtifactType type, CedarHttp http,
+      ArtifactFormat accept, CedarHttp.CedarResponse writeResponse)
+  {
+    if (accept != ArtifactFormat.YAML)
+      return success(writeResponse.body());
+
+    String id;
+    try {
+      id = ArtifactCodec.identifierOf(writeResponse.body());
+    } catch (RuntimeException e) {
+      id = null;
+    }
+    if (id == null)
+      return success(writeResponse.body() + "\n\nNote: the created " + type.noun + " names no "
+          + "identifier, so it could not be re-read; the copy above is the expanded form.");
+
+    CedarHttp.CedarResponse fetched;
+    try {
+      fetched = http.request("GET", readPath(type, id, accept), null, null, accept);
+    } catch (RuntimeException e) {
+      return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was created, but "
+          + "re-reading it failed (" + e.getMessage() + "); the copy above is the expanded form.");
+    }
+    if (fetched.isSuccess())
+      return success(fetched.body());
+    return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was created, but "
+        + "re-reading it returned HTTP " + fetched.status() + "; the copy above is the expanded "
+        + "form.");
+  }
+
+  /**
    * Answer an update with the stored artifact, fetched after the write. The PUT itself answers with
    * the folder record rather than the artifact, so returning that would make update the one tool in
    * the surface whose result is not the artifact it just wrote. If the fetch fails the write still
@@ -227,7 +267,7 @@ final class ArtifactCrudTools
   {
     CedarHttp.CedarResponse fetched;
     try {
-      fetched = http.request("GET", idPath(type, id), null, null, format);
+      fetched = http.request("GET", readPath(type, id, format), null, null, format);
     } catch (RuntimeException e) {
       return success(writeResponse.body() + "\n\nNote: the " + type.noun + " was updated, but "
           + "re-reading it failed (" + e.getMessage() + "), so the server's write response is "
@@ -388,6 +428,18 @@ final class ArtifactCrudTools
   private static String idPath(ArtifactType type, String id)
   {
     return "/" + type.pathSegment + "/" + URLEncoder.encode(id, StandardCharsets.UTF_8);
+  }
+
+  /**
+   * The path a read fetches an artifact from. CEDAR renders YAML in two forms and serves the
+   * expanded one unless a read asks for the other, so a YAML read names the compact form
+   * explicitly: that is the form this MCP exchanges and the one its tool descriptions promise.
+   * JSON has a single form and takes no such parameter. CEDAR rejects the parameter on a write,
+   * so only reads carry it.
+   */
+  private static String readPath(ArtifactType type, String id, ArtifactFormat accept)
+  {
+    return idPath(type, id) + (accept == ArtifactFormat.YAML ? "?compact=true" : "");
   }
 
   private static Map<String, Object> args(McpSchema.CallToolRequest request)

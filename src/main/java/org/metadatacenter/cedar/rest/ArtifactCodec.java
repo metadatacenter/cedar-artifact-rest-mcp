@@ -15,9 +15,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * What the REST tools need to know about an artifact before handing it to the server: which
- * serialization it is written in, which kind it is, and how to strip an identifier the caller should
- * not be supplying.
+ * What the REST tools need to know about an artifact as it passes to and from the server: which
+ * serialization it is written in, which kind it is, how to strip an identifier the caller should
+ * not be supplying, and how to read back the one the server assigned.
  *
  * <p>Nothing here reads an artifact into the model. Artifacts travel to and from the server in the
  * serialization the caller used — YAML by default, and CEDAR's JSON-LD when the caller asks for it —
@@ -93,6 +93,22 @@ final class ArtifactCodec
       return text;
     map.remove(YAML_ID);
     return newYaml().dump(map);
+  }
+
+  /**
+   * The identifier an artifact carries, read from whichever serialization it arrived in: JSON-LD
+   * spells it {@code @id}, YAML spells it {@code id}. A create reads it off the artifact the server
+   * answered with, to fetch that artifact back in a form the write could not produce. Null when the
+   * document names none, which leaves the caller to answer with what it already holds.
+   */
+  static String identifierOf(String text)
+  {
+    if (looksLikeJson(text)) {
+      JsonNode id = asObjectNode(text).get(JSON_LD_ID);
+      return id == null || !id.isTextual() || id.asText().isBlank() ? null : id.asText();
+    }
+    Object id = parseYamlMap(text).get(YAML_ID);
+    return id == null || String.valueOf(id).isBlank() ? null : String.valueOf(id);
   }
 
   private static ArtifactType kindFromYamlType(Map<String, Object> map)
