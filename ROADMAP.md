@@ -15,8 +15,9 @@ is out of scope, so the boundaries don't drift.
 - **Server-side validation**: `validate_artifact` → `POST /command/validate` (the
   authoritative meta-model validator; complements `cedar-artifact-mcp`'s client-side one).
 - **YAML or JSON on the wire**: an artifact is sent to the server in the serialization the caller
-  wrote it in and comes back in the one they asked for — YAML by default, an order of magnitude
-  smaller than CEDAR's JSON-LD and lossless, or JSON with `format: json`. The server reads and
+  wrote it in and comes back in the one they asked for — compact, read-only YAML by default, or
+  JSON with `format: json`. Compact YAML keeps the root ID but omits nested artifact IDs and
+  repository metadata. The server reads and
   writes both, so neither direction is transcoded here — a sparse instance included, which the
   server completes against its template. Nothing here reads an artifact into the model, so this MCP
   carries no `cedar-artifact-library` dependency and resolves from Maven Central alone.

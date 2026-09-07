@@ -24,8 +24,8 @@ final class ValidateArtifactTool
   {
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("artifact", Map.of("type", "string", "description",
-        "A CEDAR template, element, field, or instance as YAML (the compact exchange form "
-            + "cedar-artifact-mcp produces); JSON is also accepted. Pass it inline, verbatim — "
+        "A CEDAR template, element, field, or instance as minimal, compact, or expanded YAML; "
+            + "JSON is also accepted. Pass it inline, verbatim — "
             + "don't reformat it."));
 
     McpSchema.Tool tool = McpSchema.Tool.builder()
@@ -42,7 +42,7 @@ final class ValidateArtifactTool
                 + "than bisecting it."
                 + " Do not hand-author CEDAR JSON-LD to validate it. Its @context block, the @id "
                 + "every nested element instance carries, and the attribute-value shape are easy to "
-                + "get wrong and are not obvious from a template's JSON Schema; author compact YAML."
+                + "get wrong and are not obvious from a template's JSON Schema; author minimal YAML."
                 + ArtifactCrudTools.INSTANCE_VALUE_VOCABULARY)
         .inputSchema(new McpSchema.JsonSchema("object", properties, List.of("artifact"),
             Boolean.FALSE, null, null))

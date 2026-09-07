@@ -36,7 +36,7 @@ public interface CedarHttp
    * Status, body and entity tag of a resource-server response.
    *
    * <p>The tag is what a later write sends back as {@code If-Match}. CEDAR issues a different one per
-   * representation — {@code "3"} for JSON, {@code "3-yaml"}, {@code "3-yaml-compact"} — and reads the
+   * representation — {@code "3"} for JSON, {@code "3-yaml"}, {@code "3-yaml-compact-v2"} — and reads the
    * revision out of whichever it is given, so the tag from any read satisfies the precondition.
    */
   record CedarResponse(int status, String body, String etag)

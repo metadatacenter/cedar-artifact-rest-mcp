@@ -26,10 +26,10 @@ default, JSON when they ask. Nothing is transcoded here, so an artifact that arr
 one this MCP cannot damage, and the YAML a caller reads is the server's own rendering rather than a
 second implementation of it.
 
-YAML is the default because it is an order of magnitude smaller than CEDAR's JSON-LD while carrying
-the same artifact — a difference that decides whether a template fits comfortably in a
-conversation. Neither serialization is privileged in the model: the artifact *model* is what is
-canonical, and JSON and YAML are equal serializations of it (cedar-artifact-mcp Principle 8).
+YAML is the default because its compact form is much smaller than CEDAR's JSON-LD — a difference
+that decides whether a template fits comfortably in a conversation. Compact YAML is deliberately
+read-only: it retains the document-root ID but omits nested artifact IDs and repository metadata.
+Full YAML and JSON are the lossless forms; the artifact *model* is canonical.
 
 Nothing is converted, an instance included. A stored instance's JSON must carry every field its
 template declares, empty ones included, and YAML has no way to write an empty field — its reader

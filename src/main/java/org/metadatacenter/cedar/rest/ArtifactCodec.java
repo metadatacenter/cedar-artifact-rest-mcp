@@ -97,7 +97,7 @@ final class ArtifactCodec
    *
    * <p>A PUT names the artifact in its path, so the body's id only repeats it. That repetition is
    * also in the way: CEDAR refuses a YAML body carrying an id without the system-recorded keys
-   * beside it, and that is exactly the compact form every read on this surface returns. The same
+   * beside it, and that is exactly the compact read-only form every default read returns. The same
    * body without the id is the minimal form, which CEDAR accepts. JSON is not read through that
    * rule and is left alone.
    */

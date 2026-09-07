@@ -29,7 +29,7 @@ final class CedarRestToolsTest
       String ifMatch) {}
 
   /** The entity tag every fake read hands back, for a write to assert against. */
-  static final String ETAG = "\"7-yaml-compact\"";
+  static final String ETAG = "\"7-yaml-compact-v2\"";
 
   /** Records every request and returns a canned response to each. */
   static class FakeHttp implements CedarHttp

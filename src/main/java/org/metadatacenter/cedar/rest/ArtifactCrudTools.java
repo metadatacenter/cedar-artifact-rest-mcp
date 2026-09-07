@@ -18,16 +18,16 @@ import java.util.function.BiFunction;
  * registers them in a loop.
  *
  * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. An artifact travels in the
- * serialization the caller used — YAML, the compact exchange form, unless the caller passes JSON —
- * and comes back in the one the caller asked for, YAML by default. The server reads and writes
- * both, so neither direction is transcoded here. {@code create} strips the identifier the artifact
- * arrived with, since the server mints it. Non-2xx responses surface the server's status and body
- * as an error result (errors are content).
+ * serialization the caller used and comes back in the one requested, YAML by default. Compact YAML
+ * is a read-only display form; callers request full YAML before editing. The server reads and writes
+ * YAML and JSON, so neither direction is transcoded here. {@code create} strips the identifier the
+ * artifact arrived with, since the server mints it. Non-2xx responses surface the server's status
+ * and body as an error result (errors are content).
  */
 final class ArtifactCrudTools
 {
   /**
-   * The compact YAML value vocabulary shared by every tool that accepts a template instance.
+   * The lean YAML value vocabulary shared by every tool that accepts a template instance.
    * Keep this as one block: create, update, and validate must teach the same wire shape.
    */
   static final String INSTANCE_VALUE_VOCABULARY =
@@ -87,8 +87,8 @@ final class ArtifactCrudTools
         .title("Fetch a CEDAR " + type.noun + " from the server")
         .description(
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
-                + "artifact as YAML (the compact exchange form — an order of magnitude smaller than "
-                + "JSON and lossless), or as JSON only if you pass format: json. Pass "
+                + "artifact as compact, read-only YAML by default, or as JSON if you pass format: json. "
+                + "Compact YAML keeps the root ID but omits nested artifact IDs and repository metadata. Pass "
                 + "compact: false for the full form, which is the one an update must be given back. "
                 + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize."
                 + authoringPointer(type))
@@ -130,10 +130,10 @@ final class ArtifactCrudTools
             "Creates a new CEDAR " + type.noun + " on the CEDAR server (it is placed in your home "
                 + "folder). Do not supply an identifier: the server mints the artifact's @id and "
                 + "every child identifier, and any id the artifact carries is dropped before it is "
-                + "sent. The created artifact comes back as YAML (the compact exchange form), or as "
+                + "sent. The created artifact comes back as compact, read-only YAML, or as "
                 + "JSON only if you pass format: json, carrying the identifiers the server assigned. "
-                + "WRITES to the server. Supply the artifact inline as YAML (the compact form "
-                + "cedar-artifact-mcp returns); JSON is also accepted. Pass it verbatim, "
+                + "WRITES to the server. Supply the artifact inline as minimal or expanded YAML; "
+                + "JSON is also accepted. Pass it verbatim, "
                 + "don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
                 + instanceValueVocabulary(type))
         .inputSchema(schema(properties, List.of("artifact")))
@@ -180,7 +180,7 @@ final class ArtifactCrudTools
         .description(
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
                 + "@id in the artifact body must match the id argument. Returns the stored artifact "
-                + "as YAML (the compact exchange form), or as JSON only if you pass "
+                + "as compact, read-only YAML, or as JSON only if you pass "
                 + "format: json. WRITES to the server. The body must be the FULL YAML form, which "
                 + "carries the id alongside the version, status, model version and provenance: fetch "
                 + "it with get_" + type.noun + " and compact: false, edit that, and pass it back. The "
@@ -393,7 +393,7 @@ final class ArtifactCrudTools
   {
     return " Do not hand-author CEDAR JSON-LD. Its @context block, the @id every nested element "
         + "instance carries, and the attribute-value shape are all easy to get wrong and are not "
-        + "obvious from a template's JSON Schema. Author the compact YAML instead and let the "
+        + "obvious from a template's JSON Schema. Author minimal YAML instead and let the "
         + "server produce the JSON.";
   }
 
@@ -420,7 +420,7 @@ final class ArtifactCrudTools
   private static String authoringPointer(ArtifactType type)
   {
     return type == ArtifactType.TEMPLATE
-        ? " To author an instance of this template, send create_instance compact YAML naming this "
+        ? " To author an instance of this template, send create_instance minimal YAML naming this "
             + "template in isBasedOn — you do not need to send the template back, and you do not "
             + "need to derive JSON-LD from its JSON Schema."
         : "";
@@ -429,10 +429,11 @@ final class ArtifactCrudTools
   private static Map<String, Object> artifactProperty(ArtifactType type)
   {
     return Map.of("type", "string", "description",
-        "The CEDAR " + type.noun + " as YAML (the compact exchange form cedar-artifact-mcp "
-            + "produces); JSON is also accepted. Pass it inline, verbatim."
+        "The CEDAR " + type.noun + " as minimal or expanded YAML; JSON is also accepted. Compact "
+            + "YAML returned by reads is a display form and must not be supplied to a storage tool. "
+            + "Pass the authoring form inline, verbatim."
             + (type == ArtifactType.INSTANCE
-                ? " Author it as compact YAML rather than as CEDAR JSON-LD; see the tool description "
+                ? " Author it as minimal YAML rather than as CEDAR JSON-LD; see the tool description "
                     + "for the child value vocabulary."
                 : ""));
   }
@@ -442,8 +443,8 @@ final class ArtifactCrudTools
     return Map.of(
         "type", "boolean",
         "description",
-        "Which YAML form to return. True, the default, is the compact exchange form: lean, and what "
-            + "the rest of this surface reads and writes. False is the full form, which carries the "
+        "Which YAML form to return. True, the default, is the compact read-only display form: it "
+            + "keeps the root ID but omits nested artifact IDs and repository metadata. False is the full form, which carries the "
             + "id alongside the version, status, model version and provenance CEDAR records. Ask for "
             + "false when the artifact is going to be edited and stored again: an update is refused "
             + "unless its body is the full form. Ignored for JSON, which has one form.");
@@ -462,8 +463,8 @@ final class ArtifactCrudTools
         "type", "string",
         "enum", List.of("yaml", "json"),
         "description",
-        "Output format for the returned artifact. Leave it unset (or \"yaml\") to get the compact "
-            + "exchange form — an order of magnitude smaller than JSON and lossless. Pass \"json\" "
+        "Output format for the returned artifact. Leave it unset (or \"yaml\") to get compact, "
+            + "read-only YAML. Pass \"json\" "
             + "only when a downstream tool can't read YAML. YAML is the default.");
   }
 
@@ -478,7 +479,7 @@ final class ArtifactCrudTools
    * <p>CEDAR answers 428 to an update or a delete that carries no {@code If-Match}, so a write costs
    * a read first. The compact YAML form is read because it is the smallest of the three, and the
    * body is discarded: CEDAR reads the revision out of whichever representation's tag it is given,
-   * so {@code "3-yaml-compact"} asserts revision 3 exactly as {@code "3"} does.
+   * so {@code "3-yaml-compact-v2"} asserts revision 3 exactly as {@code "3"} does.
    */
   private static CedarHttp.CedarResponse readForPrecondition(ArtifactType type, String id, CedarHttp http)
   {
@@ -493,7 +494,7 @@ final class ArtifactCrudTools
   /**
    * The path a read fetches an artifact from. CEDAR renders YAML in two forms and serves the
    * expanded one unless a read asks for the other, so a YAML read names the compact form
-   * explicitly: that is the form this MCP exchanges and the one its tool descriptions promise.
+   * explicitly: that is the read-only display form this MCP returns by default.
    * JSON has a single form and takes no such parameter. CEDAR rejects the parameter on a write,
    * so only reads carry it.
    */

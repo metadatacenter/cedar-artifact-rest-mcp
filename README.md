@@ -27,7 +27,7 @@ for — YAML unless they pass `format: json`. Nothing is converted along the way
 YAML below is what actually crossed the wire rather than a rendering of something else.
 
 Assume the LLM already has a Patient Study template in hand, authored with `cedar-artifact-mcp`
-(shown as the compact YAML the user sees). It names no artifact yet: CEDAR assigns identity when
+(shown in the minimal YAML authoring form). It names no artifact yet: CEDAR assigns identity when
 the template is created.
 
 ```yaml
@@ -59,45 +59,25 @@ elsewhere.
 type: template
 name: "Patient Study"
 id: "https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41"
-status: draft
-version: 0.0.1
-modelVersion: 1.6.0
-createdOn: "2026-08-18T18:49:15-07:00"
-createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
-modifiedOn: "2026-08-18T18:49:15-07:00"
-modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
 children:
   - key: "Patient Name"
     type: text-field
     name: "Patient Name"
-    id: "https://repo.metadatacenter.org/template-fields/f07598a6-1d27-4531-add4-06a3e75d15ae"
-    status: draft
-    version: 0.0.1
-    modelVersion: 1.6.0
-    createdOn: "2026-08-18T18:49:15-07:00"
-    createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
-    modifiedOn: "2026-08-18T18:49:15-07:00"
-    modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
-    configuration:
-      propertyIri: "https://schema.metadatacenter.org/properties/a767fc24-6d7a-478a-a02a-e362562040fa"
   - key: "Age"
     type: numeric-field
     name: "Age"
-    id: "https://repo.metadatacenter.org/template-fields/2228a85a-2e05-4b11-b2d1-1c1dc85aed58"
-    ...
+    datatype: xsd:int
 ```
 
-`create_template` returns what CEDAR stored, in the full form: the template's identity, one for
-each child, a property IRI per child, provenance, and the `0.0.1` / `draft` the server supplied
-because the template named neither. Everything here that identifies something was minted by the
-server — an artifact reaches it carrying no identity, and any it did carry is stripped before the
-write.
+`create_template` returns a compact, read-only rendering of what CEDAR stored. It retains the
+template's root identity while omitting child artifact IDs, property IRIs, provenance, version,
+status, and model version. CEDAR did mint those omitted values; ask for full YAML before an edit.
 
 *Fetch it back.*
 
-`get_template` with that IRI returns the same document. It is the exchange form, so it threads
-straight back into `update_template` without losing provenance, version, or status; pass
-`format: json` when something downstream needs CEDAR's JSON-LD instead.
+`get_template` with that IRI returns the same compact display document by default. For an edit,
+call it with `compact: false`, edit that full YAML, and pass the full result to `update_template`;
+pass `format: json` when something downstream needs CEDAR's JSON-LD instead.
 
 *Create an instance called Patient Study for Alice, with Patient Name = Alice and Age = 30.*
 
@@ -123,10 +103,6 @@ type: instance
 name: "Patient Study"
 id: "https://repo.metadatacenter.org/template-instances/cba3c72a-ff4f-40ff-bf54-411d259d63cc"
 isBasedOn: "https://repo.metadatacenter.org/templates/74533fe4-d182-419e-bde5-30829f48dc41"
-createdOn: "2026-08-18T18:49:15-07:00"
-createdBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
-modifiedOn: "2026-08-18T18:49:15-07:00"
-modifiedBy: "https://metadatacenter.org/users/0e97ec85-77a9-434c-8549-33f9eae22608"
 children:
   Patient Name:
     value: "Alice"
@@ -175,16 +151,16 @@ request path is handled for you, so pass the plain IRI. Discovery (search, folde
 ### `get_{template,element,field,instance}(id)`
 
 Fetches an artifact from the CEDAR server by its `@id` IRI (`GET /{type}/{id}`). Returns the
-artifact as YAML — the exchange form, an order of magnitude smaller than CEDAR's JSON-LD and
-carrying every field, so it threads back into `update_*` unaltered. Pass `format: json` for the
+artifact as compact, read-only YAML by default. It retains the root ID but omits nested artifact
+IDs and repository metadata. Fetch with `compact: false` before editing; pass `format: json` for
 JSON-LD.
 
 ### `create_{template,element,field,instance}(artifact)`
 
 Creates a new artifact on the server (`POST /{type}`), placed in your home folder. **Writes to the
 server.** Identity is stripped from the body, so the **server** mints it — the artifact's own IRI,
-its children's, and a property IRI per child — and returns the stored artifact carrying all of
-them. A YAML body needs no `version` or `status`; the server defaults them to `0.0.1` and `draft`.
+its children's, and a property IRI per child — and returns a compact rendering carrying only the
+root ID. A YAML body needs no `version` or `status`; the server defaults them to `0.0.1` and `draft`.
 A JSON body must carry both (see DESIGN.md). A sparse instance is completed by the server, so lean
 YAML is all a caller has to write.
 
@@ -193,7 +169,8 @@ YAML is all a caller has to write.
 Updates an existing artifact (`PUT /{type}/{id}`). **Writes to the server.** The `id` argument and
 the body's `@id` must agree; unlike `create`, the artifact's own identity is kept. Returns the
 stored artifact, re-read after the write — the `PUT` itself answers with the artifact's folder
-record rather than the artifact.
+record rather than the artifact. The returned YAML is compact and read-only; fetch with
+`compact: false` before another update.
 
 ### `delete_{template,element,field,instance}(id)`
 
