@@ -7,7 +7,8 @@ Start with these, in order:
 2. **[DESIGN.md](./DESIGN.md)** — the architectural principles. Read this *before* adding a tool,
    or you'll be tempted to put logic here that belongs in the calling LLM or in
    `cedar-artifact-mcp`. This MCP is a thin, honest conduit to the CEDAR REST API.
-3. **[ROADMAP.md](./ROADMAP.md)** — what's in v1, what's deferred, what's out of scope.
+3. **[CEDAR MCP Servers Roadmap](https://github.com/metadatacenter/cedar-development/blob/develop/ops/MCP-ROADMAP.md)** — what is left to do, here and across the
+   four servers. DESIGN.md states what is out of scope.
 
 After those three, the code is self-explanatory. Patterns to mirror:
 
@@ -55,7 +56,7 @@ After those three, the code is self-explanatory. Patterns to mirror:
 ## What's not in scope
 
 This MCP manages **artifacts** through the resource server, nothing else. Folders, categories,
-search/discovery, users, groups, and permissions are out of scope (ROADMAP.md). Artifact
+search/discovery, users, groups, and permissions are out of scope (DESIGN.md). Artifact
 *construction*, conversion, and client-side validation live in `cedar-artifact-mcp`; the two
 compose (build there, persist here). If you're tempted to add file I/O or model-building logic
 here, stop — it belongs elsewhere.

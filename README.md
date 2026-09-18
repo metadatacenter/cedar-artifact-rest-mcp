@@ -8,9 +8,10 @@ in memory; this one persists them to, and fetches them from, a live CEDAR server
 It deliberately covers **only the artifact corner** of that REST API — create / fetch / update /
 delete / validate for templates, elements, fields, and instances. The rest of the CEDAR REST
 surface — folders, search, users, groups, permissions, categories — is **out of scope** (hence the
-name; see [ROADMAP.md](./ROADMAP.md)). It is not, and is not meant to be, a full CEDAR REST client.
+name; see [DESIGN.md](./DESIGN.md)). It is not, and is not meant to be, a full CEDAR REST client.
 
-See [DESIGN.md](./DESIGN.md) for the principles and [ROADMAP.md](./ROADMAP.md) for scope and
+See [DESIGN.md](./DESIGN.md) for the principles and scope, and the
+[CEDAR MCP Servers Roadmap](https://github.com/metadatacenter/cedar-development/blob/develop/ops/MCP-ROADMAP.md) for
 deferred work.
 
 ## Example workflow

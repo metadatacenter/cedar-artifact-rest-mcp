@@ -6,8 +6,15 @@ Principles governing what belongs in `cedar-artifact-rest-mcp`. Read before addi
 
 This MCP wraps exactly one thing: the CEDAR **resource server** REST API, and only its
 **artifact** surface — templates, template-elements, template-fields, template-instances. CRUD
-plus server-side validation. Everything else the resource server offers — folders, categories,
-search, users, groups, permissions, index maintenance — is out of scope (see ROADMAP.md).
+plus server-side validation. Everything else the resource server offers is out of scope and left
+to other tooling: discovery (`/search`, `/search-deep`, `/folders/{id}/contents`); folders,
+categories, users and groups; permissions (`GET` and `PUT /{type}/{id}/permissions`); the resource
+organization commands `copy-artifact-to-folder`, `move-resource-to-folder`, `rename-resource`,
+`attach-category` and `detach-category`; and the index maintenance commands such as
+`regenerate-search-index`.
+
+Excluding discovery has a consequence worth naming: this MCP operates by artifact IRI, so a caller
+fetches what it can name, or what a `create` just returned, and cannot find an artifact by query.
 
 ## Principle 2 — The server is the system of record
 
