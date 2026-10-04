@@ -17,7 +17,7 @@ import java.util.function.BiFunction;
  * so the tools are generated rather than written out as 16 near-identical classes; the server
  * registers them in a loop.
  *
- * <p>Conventions: artifact IDs are IRIs, URL-encoded into the path. An artifact travels in the
+ * <p>Conventions: artifact selectors use type/uuid; document IDs remain IRIs. An artifact travels in the
  * serialization the caller used and comes back in the one requested, YAML by default. Compact YAML
  * is a read-only display form; callers request full YAML before editing. The server reads and writes
  * YAML and JSON, so neither direction is transcoded here. {@code create} strips the identifier the
@@ -86,7 +86,7 @@ final class ArtifactCrudTools
         .name("get_" + type.noun)
         .title("Fetch a CEDAR " + type.noun + " from the server")
         .description(
-            "Fetches a CEDAR " + type.noun + " from the CEDAR server by its @id (IRI). Returns the "
+            "Fetches a CEDAR " + type.noun + " from the CEDAR server by type/uuid or its full @id IRI. Returns the "
                 + "artifact as compact, read-only YAML by default, or as JSON if you pass format: json. "
                 + "Compact YAML keeps the root ID but omits nested artifact IDs and repository metadata. Pass "
                 + "compact: false for the full form, which is the one an update must be given back. "
@@ -100,7 +100,7 @@ final class ArtifactCrudTools
           Map<String, Object> args = args(request);
           String id = str(args, "id");
           if (id == null || id.isBlank())
-            return error("id is required (the artifact's @id IRI)");
+            return error("id is required (type/uuid or the artifact's full @id IRI)");
           ArtifactFormat accept = wanted(args);
           boolean compact = compactWanted(args);
           CedarHttp.CedarResponse response;
@@ -178,7 +178,7 @@ final class ArtifactCrudTools
         .name("update_" + type.noun)
         .title("Update a CEDAR " + type.noun + " on the server")
         .description(
-            "Updates an existing CEDAR " + type.noun + " on the server (PUT) by its @id (IRI). The "
+            "Updates an existing CEDAR " + type.noun + " on the server (PUT) by type/uuid or its full @id IRI. The "
                 + "@id in the artifact body must match the id argument. Returns the stored artifact "
                 + "as compact, read-only YAML, or as JSON only if you pass "
                 + "format: json. WRITES to the server. The body must be the FULL YAML form, which "
@@ -196,7 +196,7 @@ final class ArtifactCrudTools
           Map<String, Object> args = args(request);
           String id = str(args, "id");
           if (id == null || id.isBlank())
-            return error("id is required (the artifact's @id IRI)");
+            return error("id is required (type/uuid or the artifact's full @id IRI)");
           String text = str(args, "artifact");
           if (text == null || text.isBlank())
             return error("artifact is required and must not be blank");
@@ -207,7 +207,7 @@ final class ArtifactCrudTools
             // still there, and only when the caller supplied one — a body naming nothing is being
             // authored against the path, which is the minimal form.
             String named = ArtifactCodec.identifierOf(text);
-            if (named != null && !named.equals(id))
+            if (named != null && !CedarResourceAddress.selector(named).equals(CedarResourceAddress.selector(id)))
               return error("the artifact names " + named + ", which is not the " + type.noun
                   + " being updated (" + id + "). Pass the artifact this id identifies, or drop the "
                   + "id from the body to write it against the id argument.");
@@ -309,7 +309,7 @@ final class ArtifactCrudTools
         .name("delete_" + type.noun)
         .title("Delete a CEDAR " + type.noun + " on the server")
         .description(
-            "Permanently deletes a CEDAR " + type.noun + " from the server by its @id (IRI). "
+            "Permanently deletes a CEDAR " + type.noun + " from the server by type/uuid or its full @id IRI. "
                 + "DESTRUCTIVE and irreversible — confirm with the user before calling. WRITES to the "
                 + "server.")
         .inputSchema(schema(properties, List.of("id")))
@@ -320,7 +320,7 @@ final class ArtifactCrudTools
           Map<String, Object> args = args(request);
           String id = str(args, "id");
           if (id == null || id.isBlank())
-            return error("id is required (the artifact's @id IRI)");
+            return error("id is required (type/uuid or the artifact's full @id IRI)");
           CedarHttp.CedarResponse response;
           try {
             CedarHttp.CedarResponse current = readForPrecondition(type, id, http);
@@ -406,9 +406,8 @@ final class ArtifactCrudTools
   private static Map<String, Object> idProperty(ArtifactType type)
   {
     return Map.of("type", "string", "description",
-        "The " + type.noun + "'s @id — the full CEDAR IRI (e.g. "
-            + "https://repo.metadatacenter.org/" + type.pathSegment + "/<uuid>). URL-encoding is "
-            + "handled for you; pass the plain IRI.");
+        "The " + type.noun + " selector, " + type.pathSegment + "/<uuid>, or its full CEDAR @id IRI. "
+            + "The client emits a short typed route for canonical UUID identities; artifact document IDs remain full IRIs.");
   }
 
   /**
@@ -488,7 +487,10 @@ final class ArtifactCrudTools
 
   private static String idPath(ArtifactType type, String id)
   {
-    return "/" + type.pathSegment + "/" + URLEncoder.encode(id, StandardCharsets.UTF_8);
+    String selector = CedarResourceAddress.selector(id);
+    if (!selector.contains("://") && selector.contains("/") && !selector.startsWith(type.pathSegment + "/"))
+      throw new IllegalArgumentException("Expected a " + type.pathSegment + "/<uuid> selector");
+    return "/" + type.pathSegment + "/" + URLEncoder.encode(CedarResourceAddress.pathId(id), StandardCharsets.UTF_8);
   }
 
   /**

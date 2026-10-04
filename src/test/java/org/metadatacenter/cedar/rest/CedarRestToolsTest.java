@@ -217,6 +217,28 @@ final class CedarRestToolsTest
     assertEquals("/templates/https%3A%2F%2Frepo.metadatacenter.org%2Ftemplates%2Fabc", withoutQuery);
   }
 
+  @Test void canonical_and_type_qualified_selectors_share_the_short_route()
+  {
+    String uuid = "d8aaaf17-2044-4e96-b3f8-1ff1c6cc73e6";
+    for (String id : List.of("templates/" + uuid, "https://repo.metadatacenter.org/templates/" + uuid)) {
+      FakeHttp http = new FakeHttp(200, "type: template\n");
+      invoke(http, "get_template", Map.of("id", id));
+      assertEquals("/templates/" + uuid + "?compact=true", http.last().path());
+    }
+    String legacy = "https://repo.metadatacenter.net/templates/" + uuid;
+    FakeHttp http = new FakeHttp(200, "type: template\n");
+    invoke(http, "get_template", Map.of("id", legacy));
+    assertTrue(http.last().path().contains("repo.metadatacenter.net%2Ftemplates%2F" + uuid));
+  }
+
+  @Test void a_selector_cannot_change_the_tool_resource_type()
+  {
+    FakeHttp http = new FakeHttp(200, "{}");
+    var result = invoke(http, "get_template", Map.of("id", "template-fields/d8aaaf17-2044-4e96-b3f8-1ff1c6cc73e6"));
+    assertTrue(result.isError());
+    assertTrue(text(result).contains("templates/<uuid>"));
+  }
+
   @Test void get_asks_for_the_compact_yaml_representation()
   {
     FakeHttp http = new FakeHttp(200, "type: template\n");

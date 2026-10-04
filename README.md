@@ -145,13 +145,15 @@ thrown).
 | Validate | `validate_artifact` |
 | Diagnostics | `ping` |
 
-**Conventions.** Artifacts are addressed by `@id` — the full CEDAR IRI; URL-encoding into the
-request path is handled for you, so pass the plain IRI. Discovery (search, folder listing) is
-**out of scope** — you operate by IRI: fetch what you can name, or what a `create` just returned.
+**Conventions.** Supply a type-qualified selector such as `templates/<uuid>` or the artifact's
+full CEDAR `@id` IRI. The client emits `/templates/<uuid>` for canonical UUID identities and keeps
+legacy `.net` or foreign-host identities absolute. URL-encoding is handled for you. Document
+identities remain full IRIs, including when updating through a short selector. Discovery (search,
+folder listing) is **out of scope**: fetch what you can name, or what a `create` just returned.
 
 ### `get_{template,element,field,instance}(id)`
 
-Fetches an artifact from the CEDAR server by its `@id` IRI (`GET /{type}/{id}`). Returns the
+Fetches an artifact by its `type/uuid` selector or full `@id` IRI (`GET /{type}/{uuid}`). Returns the
 artifact as compact, read-only YAML by default. It retains the root ID but omits nested artifact
 IDs and repository metadata. Fetch with `compact: false` before editing; pass `format: json` for
 JSON-LD.
