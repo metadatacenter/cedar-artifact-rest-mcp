@@ -205,8 +205,12 @@
             <goals><goal>run</goal></goals>
             <configuration>
               <target>
+                <!-- Renamed into place rather than copied over it, so a server already running from
+                     the old jar keeps reading the file it opened. -->
                 <copy file="${project.build.directory}/${project.build.finalName}-all.jar"
-                      tofile="${project.build.directory}/${project.artifactId}.jar"/>
+                      tofile="${project.build.directory}/${project.artifactId}.jar.tmp" overwrite="true"/>
+                <move file="${project.build.directory}/${project.artifactId}.jar.tmp"
+                      tofile="${project.build.directory}/${project.artifactId}.jar" overwrite="true"/>
               </target>
             </configuration>
           </execution>
