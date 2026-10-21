@@ -7,12 +7,17 @@ import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.nodes.MappingNode;
+import org.yaml.snakeyaml.nodes.Node;
+import org.yaml.snakeyaml.nodes.NodeTuple;
+import org.yaml.snakeyaml.nodes.ScalarNode;
 import org.yaml.snakeyaml.nodes.Tag;
 import org.yaml.snakeyaml.representer.Representer;
 import org.yaml.snakeyaml.resolver.Resolver;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.regex.Pattern;
 
 /**
  * What the REST tools need to know about an artifact as it passes to and from the server: which
@@ -66,7 +71,7 @@ final class ArtifactCodec
    */
   static ArtifactType detectKind(String text)
   {
-    return looksLikeJson(text) ? kindFromJsonLdType(asObjectNode(text)) : kindFromYamlType(parseYamlMap(text));
+    return looksLikeJson(text) ? kindFromJsonLdType(asObjectNode(text)) : kindFromYamlType(yamlScalar(text, "type"));
   }
 
   /**
@@ -105,11 +110,17 @@ final class ArtifactCodec
   {
     if (looksLikeJson(text))
       return text;
-    LinkedHashMap<String, Object> map = parseYamlMap(text);
-    if (!map.containsKey(YAML_ID))
+    MappingNode root = yamlRoot(text);
+    if (!root.getValue().removeIf(ArtifactCodec::namesTheIdentifier))
       return text;
-    map.remove(YAML_ID);
-    return newYaml().dump(map);
+    StringWriter written = new StringWriter();
+    newYaml().serialize(root, written);
+    return written.toString();
+  }
+
+  private static boolean namesTheIdentifier(NodeTuple entry)
+  {
+    return entry.getKeyNode() instanceof ScalarNode key && YAML_ID.equals(key.getValue());
   }
 
   /**
@@ -124,14 +135,13 @@ final class ArtifactCodec
       JsonNode id = asObjectNode(text).get(JSON_LD_ID);
       return id == null || !id.isTextual() || id.asText().isBlank() ? null : id.asText();
     }
-    Object id = parseYamlMap(text).get(YAML_ID);
-    return id == null || String.valueOf(id).isBlank() ? null : String.valueOf(id);
+    String id = yamlScalar(text, YAML_ID);
+    return id == null || id.isBlank() ? null : id;
   }
 
-  private static ArtifactType kindFromYamlType(Map<String, Object> map)
+  private static ArtifactType kindFromYamlType(String type)
   {
-    String type = map.get("type") == null ? "" : String.valueOf(map.get("type"));
-    return switch (type) {
+    return switch (type == null ? "" : type) {
       case "template" -> ArtifactType.TEMPLATE;
       case "element" -> ArtifactType.ELEMENT;
       case "instance" -> ArtifactType.INSTANCE;
@@ -189,20 +199,31 @@ final class ArtifactCodec
   }
 
   // ---------------------------------------------------------------------
-  // YAML parsing — a SnakeYAML loader that does NOT resolve date-like scalars to timestamps,
-  // so temporal field values stay strings (matching cedar-artifact-mcp's exchange parser).
+  // YAML parsing. The server reads YAML with cedar-artifact-library's ArtifactSourceParser, which
+  // this MCP does not depend on, so the same YAML 1.2 core scalar rules are stated here. A document
+  // is composed, never constructed: the type and identifier are read as the text the document
+  // holds, and a document written out again keeps each scalar's text and the type YAML 1.2 gives
+  // it, for the server to read by its own rules.
   // ---------------------------------------------------------------------
 
-  private static LinkedHashMap<String, Object> parseYamlMap(String yamlText)
+  /** The text of a top-level scalar, or null when the key is absent, null or not a scalar. */
+  private static String yamlScalar(String yamlText, String key)
   {
-    Object parsed = newYaml().load(yamlText);
-    if (!(parsed instanceof Map<?, ?>))
+    for (NodeTuple entry : yamlRoot(yamlText).getValue())
+      if (entry.getKeyNode() instanceof ScalarNode name && key.equals(name.getValue()))
+        return entry.getValueNode() instanceof ScalarNode value && !Tag.NULL.equals(value.getTag())
+            ? value.getValue()
+            : null;
+    return null;
+  }
+
+  private static MappingNode yamlRoot(String yamlText)
+  {
+    Node root = newYaml().compose(new StringReader(yamlText));
+    if (!(root instanceof MappingNode mapping))
       throw new IllegalArgumentException("YAML must parse to a mapping at the top level (got "
-          + (parsed == null ? "null" : parsed.getClass().getSimpleName()) + ")");
-    LinkedHashMap<String, Object> map = new LinkedHashMap<>();
-    for (Map.Entry<?, ?> entry : ((Map<?, ?>) parsed).entrySet())
-      map.put(String.valueOf(entry.getKey()), entry.getValue());
-    return map;
+          + (root == null ? "null" : root.getNodeId()) + ")");
+    return mapping;
   }
 
   private static Yaml newYaml()
@@ -211,20 +232,20 @@ final class ArtifactCodec
     DumperOptions dumperOptions = new DumperOptions();
     dumperOptions.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
     return new Yaml(new SafeConstructor(loaderOptions), new Representer(dumperOptions),
-        dumperOptions, loaderOptions, new NoTimestampResolver());
+        dumperOptions, loaderOptions, new CoreResolver());
   }
 
-  private static final class NoTimestampResolver extends Resolver
+  /** The YAML 1.2 core schema, as cedar-artifact-library's ArtifactSourceParser resolves it. */
+  private static final class CoreResolver extends Resolver
   {
     @Override protected void addImplicitResolvers()
     {
-      addImplicitResolver(Tag.BOOL, BOOL, "yYnNtTfFoO");
-      addImplicitResolver(Tag.INT, INT, "-+0123456789");
-      addImplicitResolver(Tag.FLOAT, FLOAT, "-+0123456789.");
-      addImplicitResolver(Tag.MERGE, MERGE, "<");
-      addImplicitResolver(Tag.NULL, NULL, "~nN\0");
-      addImplicitResolver(Tag.NULL, EMPTY, null);
-      // Tag.TIMESTAMP intentionally not registered — keep date-like scalars as strings.
+      addImplicitResolver(Tag.NULL, Pattern.compile("^(?:~|null|Null|NULL|)$"), "~nN\0");
+      addImplicitResolver(Tag.BOOL, Pattern.compile("^(?:true|True|TRUE|false|False|FALSE)$"), "tTfF");
+      addImplicitResolver(Tag.INT, Pattern.compile("^(?:[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+)$"), "-+0123456789");
+      addImplicitResolver(Tag.FLOAT, Pattern.compile(
+          "^(?:[-+]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][-+]?[0-9]+)?"
+          + "|[-+]?\\.(?:inf|Inf|INF)|\\.(?:nan|NaN|NAN))$"), "-+0123456789.");
     }
   }
 }

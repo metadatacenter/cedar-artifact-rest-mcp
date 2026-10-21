@@ -2,6 +2,12 @@ package org.metadatacenter.cedar.rest;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.nodes.MappingNode;
+import org.yaml.snakeyaml.nodes.Node;
+import org.yaml.snakeyaml.nodes.ScalarNode;
+
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +29,7 @@ final class CedarRestToolsTest
   private static final String TEMPLATE_TYPE_IRI = "https://schema.metadatacenter.org/core/Template";
   private static final String TEMPLATE_IRI = "https://repo.metadatacenter.org/templates/T1";
   private static final String OTHER_IRI = "https://repo.metadatacenter.org/templates/T2";
+  private static final String INSTANCE_IRI = "https://repo.metadatacenter.org/template-instances/I1";
 
   /** One request the fake transport saw. */
   record Call(String method, String path, String body, ArtifactFormat bodyFormat, ArtifactFormat accept,
@@ -112,6 +119,30 @@ final class CedarRestToolsTest
     assertFalse(http.last().body().contains(TEMPLATE_IRI),
         "the server mints identifiers; a supplied one must not be sent: " + http.last().body());
     assertTrue(http.last().body().contains("Demo"), "the rest of the artifact survives");
+  }
+
+  @Test void create_strips_an_identifier_and_leaves_every_unquoted_value_as_written()
+  {
+    // Dropping the identifier writes the YAML out again. The server reads YAML 1.2 core scalars and
+    // keeps the text an instance value was written with, so each value must reach it as the caller
+    // wrote it. YAML 1.1 rules read 007 and 010 as octal, yes and on as booleans, 1:20 as 80 and
+    // 1_000 as 1000, and wrote those back.
+    List<String> spellings = List.of("007", "010", "yes", "on", "1:20", "1_000");
+    StringBuilder yaml = new StringBuilder("type: instance\nname: Copy\nid: " + INSTANCE_IRI
+        + "\nisBasedOn: " + TEMPLATE_IRI + "\nchildren:\n");
+    for (int i = 0; i < spellings.size(); i++)
+      yaml.append("  Field").append(i).append(":\n    value: ").append(spellings.get(i)).append('\n');
+    FakeHttp http = new FakeHttp(201, "type: instance\n");
+
+    invoke(http, "create_instance", Map.of("artifact", yaml.toString()));
+
+    String body = http.write().body();
+    assertFalse(body.contains(INSTANCE_IRI), "the identifier must not be sent: " + body);
+    MappingNode children = (MappingNode) entry((MappingNode) new Yaml().compose(new StringReader(body)), "children");
+    for (int i = 0; i < spellings.size(); i++) {
+      ScalarNode value = (ScalarNode) entry((MappingNode) entry(children, "Field" + i), "value");
+      assertEquals(spellings.get(i), value.getValue(), "every value must keep its text: " + body);
+    }
   }
 
   @Test void create_strips_the_json_ld_identifier_too()
@@ -466,6 +497,16 @@ final class CedarRestToolsTest
         .filter(rt -> rt.tool().name().equals(toolName))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("no such tool: " + toolName));
+  }
+
+  /** The value a YAML mapping holds under a key. */
+  private static Node entry(MappingNode mapping, String key)
+  {
+    return mapping.getValue().stream()
+        .filter(pair -> pair.getKeyNode() instanceof ScalarNode name && name.getValue().equals(key))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("no " + key + " in the YAML sent"))
+        .getValueNode();
   }
 
   private static String text(McpSchema.CallToolResult result)
