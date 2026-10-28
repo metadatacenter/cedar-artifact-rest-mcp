@@ -82,8 +82,9 @@ final class ArtifactCrudTools
     properties.put("format", formatProperty());
     properties.put("compact", compactProperty());
 
-    McpSchema.Tool tool = McpSchema.Tool.builder()
-        .name("get_" + type.noun)
+    Map<String, Object> schema = ToolSchemas.object(properties, List.of("id"));
+
+    McpSchema.Tool tool = McpSchema.Tool.builder("get_" + type.noun, schema)
         .title("Fetch a CEDAR " + type.noun + " from the server")
         .description(
             "Fetches a CEDAR " + type.noun + " from the CEDAR server by type/uuid or its full @id IRI. Returns the "
@@ -92,7 +93,6 @@ final class ArtifactCrudTools
                 + "compact: false for the full form, which is the one an update must be given back. "
                 + "Reproduce the returned artifact verbatim — do not drop id/@id lines or summarize."
                 + authoringPointer(type))
-        .inputSchema(schema(properties, List.of("id")))
         .build();
 
     BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler =
@@ -123,8 +123,9 @@ final class ArtifactCrudTools
     properties.put("artifact", artifactProperty(type));
     properties.put("format", formatProperty());
 
-    McpSchema.Tool tool = McpSchema.Tool.builder()
-        .name("create_" + type.noun)
+    Map<String, Object> schema = ToolSchemas.object(properties, List.of("artifact"));
+
+    McpSchema.Tool tool = McpSchema.Tool.builder("create_" + type.noun, schema)
         .title("Create a CEDAR " + type.noun + " on the server")
         .description(
             "Creates a new CEDAR " + type.noun + " on the CEDAR server (it is placed in your home "
@@ -136,7 +137,6 @@ final class ArtifactCrudTools
                 + "JSON is also accepted. Pass it verbatim, "
                 + "don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
                 + instanceValueVocabulary(type))
-        .inputSchema(schema(properties, List.of("artifact")))
         .build();
 
     BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler =
@@ -174,8 +174,9 @@ final class ArtifactCrudTools
     properties.put("artifact", artifactProperty(type));
     properties.put("format", formatProperty());
 
-    McpSchema.Tool tool = McpSchema.Tool.builder()
-        .name("update_" + type.noun)
+    Map<String, Object> schema = ToolSchemas.object(properties, List.of("id", "artifact"));
+
+    McpSchema.Tool tool = McpSchema.Tool.builder("update_" + type.noun, schema)
         .title("Update a CEDAR " + type.noun + " on the server")
         .description(
             "Updates an existing CEDAR " + type.noun + " on the server (PUT) by type/uuid or its full @id IRI. The "
@@ -188,7 +189,6 @@ final class ArtifactCrudTools
                 + "artifact without those keys beside it. JSON is also accepted. Pass it "
                 + "verbatim, don't reformat." + instanceUploadHint(type) + noHandBuiltJsonLd()
                 + instanceValueVocabulary(type))
-        .inputSchema(schema(properties, List.of("id", "artifact")))
         .build();
 
     BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler =
@@ -305,14 +305,14 @@ final class ArtifactCrudTools
     Map<String, Object> properties = new LinkedHashMap<>();
     properties.put("id", idProperty(type));
 
-    McpSchema.Tool tool = McpSchema.Tool.builder()
-        .name("delete_" + type.noun)
+    Map<String, Object> schema = ToolSchemas.object(properties, List.of("id"));
+
+    McpSchema.Tool tool = McpSchema.Tool.builder("delete_" + type.noun, schema)
         .title("Delete a CEDAR " + type.noun + " on the server")
         .description(
             "Permanently deletes a CEDAR " + type.noun + " from the server by type/uuid or its full @id IRI. "
                 + "DESTRUCTIVE and irreversible — confirm with the user before calling. WRITES to the "
                 + "server.")
-        .inputSchema(schema(properties, List.of("id")))
         .build();
 
     BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler =
@@ -467,11 +467,6 @@ final class ArtifactCrudTools
             + "only when a downstream tool can't read YAML. YAML is the default.");
   }
 
-  private static McpSchema.JsonSchema schema(Map<String, Object> properties, List<String> required)
-  {
-    return new McpSchema.JsonSchema("object", properties, required, Boolean.FALSE, null, null);
-  }
-
   /**
    * Read an artifact for the entity tag a write must assert against.
    *
@@ -519,7 +514,7 @@ final class ArtifactCrudTools
   private static McpSchema.CallToolResult success(String text)
   {
     return McpSchema.CallToolResult.builder()
-        .content(List.of(new McpSchema.TextContent(null, text)))
+        .content(List.of(McpSchema.TextContent.builder(text).build()))
         .isError(false)
         .build();
   }
@@ -527,7 +522,7 @@ final class ArtifactCrudTools
   private static McpSchema.CallToolResult error(String message)
   {
     return McpSchema.CallToolResult.builder()
-        .content(List.of(new McpSchema.TextContent(null, message)))
+        .content(List.of(McpSchema.TextContent.builder(message).build()))
         .isError(true)
         .build();
   }

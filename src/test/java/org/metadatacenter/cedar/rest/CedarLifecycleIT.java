@@ -1,7 +1,6 @@
 package org.metadatacenter.cedar.rest;
 
 import io.modelcontextprotocol.spec.McpSchema;
-import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -114,10 +113,10 @@ final class CedarLifecycleIT
   private static CallToolResult call(String toolName, Map<String, Object> args)
   {
     if (toolName.equals("validate_artifact"))
-      return ValidateArtifactTool.create(http).handler().apply(null, new CallToolRequest(toolName, args));
+      return ValidateArtifactTool.create(http).handler().apply(null, ToolCalls.request(toolName, args));
     for (ArtifactCrudTools.RegisteredTool rt : ArtifactCrudTools.all(http))
       if (rt.tool().name().equals(toolName))
-        return rt.handler().apply(null, new CallToolRequest(toolName, args));
+        return rt.handler().apply(null, ToolCalls.request(toolName, args));
     throw new IllegalArgumentException("no such tool: " + toolName);
   }
 

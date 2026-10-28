@@ -435,7 +435,7 @@ final class CedarRestToolsTest
     String yaml = "type: element\nname: Address\n";
 
     McpSchema.CallToolResult result = ValidateArtifactTool.create(http).handler()
-        .apply(null, new McpSchema.CallToolRequest("validate_artifact", Map.of("artifact", yaml)));
+        .apply(null, ToolCalls.request("validate_artifact", Map.of("artifact", yaml)));
 
     assertFalse(result.isError(), text(result));
     assertEquals("/command/validate?resource_type=element", http.last().path());
@@ -449,7 +449,7 @@ final class CedarRestToolsTest
     String json = "{\"@type\":\"" + TEMPLATE_TYPE_IRI + "\",\"schema:name\":\"X\"}";
 
     McpSchema.CallToolResult result = ValidateArtifactTool.create(http).handler()
-        .apply(null, new McpSchema.CallToolRequest("validate_artifact", Map.of("artifact", json)));
+        .apply(null, ToolCalls.request("validate_artifact", Map.of("artifact", json)));
 
     assertFalse(result.isError(), text(result));
     assertEquals("/command/validate?resource_type=template", http.last().path());
@@ -488,7 +488,7 @@ final class CedarRestToolsTest
   private static McpSchema.CallToolResult invoke(CedarHttp http, String toolName, Map<String, Object> args)
   {
     ArtifactCrudTools.RegisteredTool tool = tool(http, toolName);
-    return tool.handler().apply(null, new McpSchema.CallToolRequest(toolName, args));
+    return tool.handler().apply(null, ToolCalls.request(toolName, args));
   }
 
   private static ArtifactCrudTools.RegisteredTool tool(CedarHttp http, String toolName)

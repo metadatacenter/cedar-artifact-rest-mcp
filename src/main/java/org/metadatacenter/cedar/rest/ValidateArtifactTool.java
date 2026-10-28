@@ -28,8 +28,9 @@ final class ValidateArtifactTool
             + "JSON is also accepted. Pass it inline, verbatim — "
             + "don't reformat it."));
 
-    McpSchema.Tool tool = McpSchema.Tool.builder()
-        .name("validate_artifact")
+    Map<String, Object> schema = ToolSchemas.object(properties, List.of("artifact"));
+
+    McpSchema.Tool tool = McpSchema.Tool.builder("validate_artifact", schema)
         .title("Validate a CEDAR artifact on the server")
         .description(
             "Validates a CEDAR artifact against the CEDAR meta-model using the server's "
@@ -44,8 +45,6 @@ final class ValidateArtifactTool
                 + "every nested element instance carries, and the attribute-value shape are easy to "
                 + "get wrong and are not obvious from a template's JSON Schema; author minimal YAML."
                 + ArtifactCrudTools.INSTANCE_VALUE_VOCABULARY)
-        .inputSchema(new McpSchema.JsonSchema("object", properties, List.of("artifact"),
-            Boolean.FALSE, null, null))
         .build();
 
     BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, McpSchema.CallToolResult> handler =
@@ -85,7 +84,7 @@ final class ValidateArtifactTool
   private static McpSchema.CallToolResult success(String text)
   {
     return McpSchema.CallToolResult.builder()
-        .content(List.of(new McpSchema.TextContent(null, text)))
+        .content(List.of(McpSchema.TextContent.builder(text).build()))
         .isError(false)
         .build();
   }
@@ -93,7 +92,7 @@ final class ValidateArtifactTool
   private static McpSchema.CallToolResult error(String message)
   {
     return McpSchema.CallToolResult.builder()
-        .content(List.of(new McpSchema.TextContent(null, message)))
+        .content(List.of(McpSchema.TextContent.builder(message).build()))
         .isError(true)
         .build();
   }
