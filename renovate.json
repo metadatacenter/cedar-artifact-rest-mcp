@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "This server builds outside cedar-parent and declares its own versions, so Renovate watches them here, on main, under the shared CEDAR backend policy.",
+  "extends": [
+    "local>metadatacenter/cedar-parent:renovate-backend"
+  ],
+  "baseBranchPatterns": [
+    "main"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep the Maven build plugins in one maintenance pull request, as cedar-parent does.",
+      "matchPackageNames": [
+        "/^org\\.apache\\.maven\\.plugins:/"
+      ],
+      "groupName": "Maven build plugins"
+    }
+  ]
+}
