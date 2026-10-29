@@ -44,6 +44,20 @@
     <slf4j.version>2.0.20</slf4j.version>
   </properties>
 
+  <!--
+    slf4j-simple binds to the API of its own release. Managing the API keeps a dependency that names
+    another release, json-schema-validator among them, from putting that one beside the binding.
+  -->
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <!-- Reads a YAML body far enough to see its kind and its identifier; the body itself is sent
          to the server as it arrived. -->
