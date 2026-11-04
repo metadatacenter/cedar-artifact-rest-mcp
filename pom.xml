@@ -38,7 +38,7 @@
       to resolution, which has picked a 1.x release from a transitive dependency before now; the SDK
       then dies on its first build() with NoClassDefFoundError: com/networknt/schema/dialect/Dialects.
     -->
-    <json-schema-validator.version>3.0.8</json-schema-validator.version>
+    <json-schema-validator.version>3.0.9</json-schema-validator.version>
     <snakeyaml.version>2.7</snakeyaml.version>
     <junit.version>6.1.3</junit.version>
     <slf4j.version>2.0.20</slf4j.version>
@@ -133,7 +133,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
       </plugin>
       <!--
         Integration tests (*IT.java) spawn the shaded jar as a subprocess and speak real
@@ -143,7 +143,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.1</version>
         <configuration>
           <!--
             Live integration tests (CedarLifecycleIT) are tagged 'live' and excluded from the
