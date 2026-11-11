@@ -217,20 +217,14 @@ Set in the MCP client's config (e.g. `~/.claude.json`), never in source or chat:
 ```bash
 mvn package          # builds the shaded jar and its stable target/cedar-artifact-rest-mcp.jar copy
 mvn test             # unit tests (run against a fake HTTP transport; no live server needed)
-mvn verify           # + integration tests, but the live ones are excluded by default
+mvn verify           # + integration tests over stdio, against a stub HTTP transport
 ```
 
-### Live integration tests
+### Testing Against a Real Server
 
-`CedarLifecycleIT` exercises validate → create → get → delete against a **real** CEDAR server,
-using canned templates from the sibling `cedar-artifact-library` checkout, and deletes whatever it
-creates. It is tagged `live` and **excluded from the default build** (mirroring
-`bioportal-term-mcp`'s `live` pytest marker). Run it on demand:
-
-```bash
-CEDAR_API_KEY="apiKey <key>" CEDAR_BASE_URL="https://resource.metadatacenter.org" \
-  mvn verify -Plive
-```
-
-Without `CEDAR_API_KEY` the live tests self-skip. Each test cleans up after itself (a failed
-cleanup fails the test).
+The whole-stack smoke's REST tier drives this server against the local CEDAR stack. Its `mcp`
+suite, in `cedar-development/ops/e2e/rest/suites/mcp.mjs`, starts `target/cedar-artifact-rest-mcp.jar`
+over stdio as the first test user. It takes canned templates from the sibling `cedar-artifact-library`
+checkout through `validate_artifact`, `create_template`, `get_template` and `delete_template`, and one
+template through `update_template`. Each step is confirmed through the resource server. The suite
+fails when the jar is older than its sources, so run `mvn package` before the smoke.

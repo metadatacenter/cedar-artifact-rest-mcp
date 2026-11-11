@@ -39,10 +39,11 @@ After those three, the code is self-explanatory. Patterns to mirror:
 
 - **Default build runs mocked tests only.** Unit tests drive the handlers through a fake
   `CedarHttp` (`CedarRestToolsTest`) — no key, no server. Every new tool gets one.
-- **Live tests are opt-in.** `CedarLifecycleIT` is tagged `@Tag("live")` and excluded from the
-  default build (failsafe `excludedGroups=live`); run it with `mvn verify -Plive` and
-  `CEDAR_API_KEY` set. It hits a real server, so every test **must delete whatever it creates**
-  (cleanup in a `finally`, asserted). This mirrors `bioportal-term-mcp`'s `live` pytest marker.
+- **The whole-stack smoke drives the built jar against a real server.** The REST tier's `mcp`
+  suite (`cedar-development/ops/e2e/rest/suites/mcp.mjs`) starts `target/cedar-artifact-rest-mcp.jar`
+  over stdio as the first test user and takes templates through validate, create, get, update and
+  delete on the local stack. It fails when the jar is older than its sources, so rebuild with
+  `mvn package` before a smoke run.
 
 ## Build conventions
 

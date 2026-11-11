@@ -144,14 +144,6 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
         <version>3.6.1</version>
-        <configuration>
-          <!--
-            Live integration tests (CedarLifecycleIT) are tagged 'live' and excluded from the
-            default build — they hit a real CEDAR server and need CEDAR_API_KEY. Run them with the
-            'live' profile: mvn verify -Plive. Mirrors bioportal-term-mcp's 'live' pytest marker.
-          -->
-          <excludedGroups>live</excludedGroups>
-        </configuration>
         <executions>
           <execution>
             <goals>
@@ -232,27 +224,4 @@
       </plugin>
     </plugins>
   </build>
-
-  <profiles>
-    <!--
-      Run the live integration tests against a real CEDAR server:
-        mvn verify -Plive        (with CEDAR_API_KEY, and optionally CEDAR_BASE_URL, in the env)
-      They self-skip if CEDAR_API_KEY is unset. Each test deletes whatever it creates.
-    -->
-    <profile>
-      <id>live</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <excludedGroups combine.self="override"></excludedGroups>
-              <groups>live</groups>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>
