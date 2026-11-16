@@ -158,7 +158,7 @@
       </plugin>
       <!--
         Integration tests (*IT.java) spawn the shaded jar as a subprocess and speak real
-        JSON-RPC over stdio (with a stub HTTP transport, so no live CEDAR server needed).
+        JSON-RPC over stdio. They call only ping, so they need no CEDAR server and no API key.
         They run in the verify phase, after the shaded jar is built.
       -->
       <plugin>
