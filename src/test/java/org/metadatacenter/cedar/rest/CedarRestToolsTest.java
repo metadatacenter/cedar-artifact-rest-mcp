@@ -408,6 +408,72 @@ final class CedarRestToolsTest
     assertTrue(text(result).contains("Deleted template"), "got: " + text(result));
   }
 
+  /** The refusals a write meets: an invalid body, a caller without the right, and a concurrent edit. */
+  private static final List<Integer> REFUSALS = List.of(400, 403, 412);
+
+  /** Reads succeed and every write is answered with the given refusal. */
+  static FakeHttp refusingWrites(int status)
+  {
+    return new FakeHttp(200, "type: template\nname: Demo\n") {
+      @Override CedarResponse respond(String method, String pathAndQuery)
+      {
+        return method.equals("GET") ? super.respond(method, pathAndQuery)
+            : new CedarResponse(status, "{\"errorKey\":\"refused" + status + "\"}", null);
+      }
+    };
+  }
+
+  private static void assertRefused(McpSchema.CallToolResult result, int status, String tool)
+  {
+    assertTrue(result.isError(), tool + " must report a " + status + " as an error: " + text(result));
+    assertTrue(text(result).contains("HTTP " + status) && text(result).contains("refused" + status),
+        tool + " must carry the status and the server's body; got: " + text(result));
+  }
+
+  @Test void create_reports_a_refused_write_as_an_error()
+  {
+    for (ArtifactType type : ArtifactType.values())
+      for (int status : REFUSALS) {
+        FakeHttp http = refusingWrites(status);
+        String tool = "create_" + type.noun;
+        McpSchema.CallToolResult result = invoke(http, tool,
+            Map.of("artifact", "type: " + type.noun + "\nname: Demo\n"));
+
+        assertRefused(result, status, tool);
+        assertEquals(List.of("POST"), http.calls.stream().map(Call::method).toList(),
+            tool + ": nothing is read back after a refused create");
+      }
+  }
+
+  @Test void update_reports_a_refused_write_as_an_error_without_re_reading()
+  {
+    for (ArtifactType type : ArtifactType.values())
+      for (int status : REFUSALS) {
+        FakeHttp http = refusingWrites(status);
+        String tool = "update_" + type.noun;
+        McpSchema.CallToolResult result = invoke(http, tool, Map.of(
+            "id", type.pathSegment + "/U1", "artifact", "type: " + type.noun + "\nname: Demo\n"));
+
+        assertRefused(result, status, tool);
+        assertEquals(List.of("GET", "PUT"), http.calls.stream().map(Call::method).toList(),
+            tool + ": the stored artifact is not read back as if the write had happened");
+      }
+  }
+
+  @Test void delete_reports_a_refused_write_as_an_error()
+  {
+    for (ArtifactType type : ArtifactType.values())
+      for (int status : REFUSALS) {
+        FakeHttp http = refusingWrites(status);
+        String tool = "delete_" + type.noun;
+        McpSchema.CallToolResult result = invoke(http, tool, Map.of("id", type.pathSegment + "/D1"));
+
+        assertRefused(result, status, tool);
+        assertFalse(text(result).contains("Deleted"), tool + ": " + text(result));
+        assertEquals(List.of("GET", "DELETE"), http.calls.stream().map(Call::method).toList(), tool);
+      }
+  }
+
   @Test void non_2xx_surfaces_as_error_with_status_and_body()
   {
     McpSchema.CallToolResult result = invoke(new FakeHttp(404, "{\"errorKey\":\"notFound\"}"),
