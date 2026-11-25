@@ -10,7 +10,7 @@ plus server-side validation. Everything else the resource server offers is out o
 to other tooling: discovery (`/search`, `/search-deep`, `/folders/{id}/contents`); folders,
 categories, users and groups; permissions (`GET` and `PUT /{type}/{id}/permissions`); the resource
 organization commands `copy-artifact-to-folder`, `move-resource-to-folder`, `rename-resource`,
-`attach-category` and `detach-category`; and the index maintenance commands such as
+`attach-categories` and `detach-category`; and the index maintenance commands such as
 `regenerate-search-index`.
 
 Excluding discovery has a consequence worth naming: this MCP operates by artifact IRI, so a caller
