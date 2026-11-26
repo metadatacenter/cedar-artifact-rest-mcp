@@ -16,7 +16,7 @@ public enum ArtifactType
   public final String pathSegment;
   /** Tool-name noun, e.g. {@code template} in {@code get_template}. */
   public final String noun;
-  /** {@code resource_type} query value for {@code POST /command/validate}. */
+  /** {@code resource_type} query value for {@code POST /artifact-validations/{resource_type}}. */
   public final String validateResourceType;
 
   ArtifactType(String pathSegment, String noun, String validateResourceType)

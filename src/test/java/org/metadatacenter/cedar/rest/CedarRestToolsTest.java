@@ -504,7 +504,7 @@ final class CedarRestToolsTest
         .apply(null, ToolCalls.request("validate_artifact", Map.of("artifact", yaml)));
 
     assertFalse(result.isError(), text(result));
-    assertEquals("/command/validate?resource_type=element", http.last().path());
+    assertEquals("/artifact-validations/element", http.last().path());
     assertEquals(yaml, http.last().body(), "the YAML is validated as written");
     assertEquals(ArtifactFormat.YAML, http.last().bodyFormat());
   }
@@ -518,7 +518,7 @@ final class CedarRestToolsTest
         .apply(null, ToolCalls.request("validate_artifact", Map.of("artifact", json)));
 
     assertFalse(result.isError(), text(result));
-    assertEquals("/command/validate?resource_type=template", http.last().path());
+    assertEquals("/artifact-validations/template", http.last().path());
     assertEquals(json, http.last().body(), "JSON should be validated as-is");
     assertEquals(ArtifactFormat.JSON, http.last().bodyFormat());
   }

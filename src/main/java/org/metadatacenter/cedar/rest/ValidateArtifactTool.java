@@ -10,7 +10,7 @@ import java.util.function.BiFunction;
 
 /**
  * Tool {@code validate_artifact} — validates a CEDAR artifact against the meta-model using the
- * server's authoritative {@code POST /command/validate}. The artifact is sent in the serialization
+ * server's authoritative {@code POST /artifact-validations/{resource_type}}. The artifact is sent in the serialization
  * the caller wrote it in, YAML or JSON, since the command reads both. The kind (template / element
  * / field / instance) is read from the YAML {@code type:} discriminator or the JSON {@code @type},
  * and names the {@code resource_type} the command is given. Returns the server's
@@ -34,7 +34,7 @@ final class ValidateArtifactTool
         .title("Validate a CEDAR artifact on the server")
         .description(
             "Validates a CEDAR artifact against the CEDAR meta-model using the server's "
-                + "/command/validate (authoritative). Supply the artifact as YAML (JSON is also "
+                + "/artifact-validations/{resource_type} (authoritative). Supply the artifact as YAML (JSON is also "
                 + "accepted); the "
                 + "kind is auto-detected from its type. Returns the server's report: "
                 + "{\"validates\": true|false, \"warnings\": [...], \"errors\": [...]}. This is a "
@@ -67,7 +67,7 @@ final class ValidateArtifactTool
           CedarHttp.CedarResponse response;
           try {
             response = http.request("POST",
-                "/command/validate?resource_type=" + type.validateResourceType,
+                "/artifact-validations/" + type.validateResourceType,
                 upload.body(), upload.format(), ArtifactFormat.JSON);
           } catch (RuntimeException e) {
             return error(e.getMessage());
